@@ -255,7 +255,7 @@ export default function SystemDetail() {
               <CardHeader className="pb-3"><CardTitle className="text-sm">Settings (parameters)</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {[
-                  ["panel_width_mm", "Chaudai (mm)"], ["panel_height_mm", "Unchai (mm)"], ["panel_area_sqm", "Area (sqm)"],
+                  ["panel_width_mm", "Width (mm)"], ["panel_height_mm", "Height (mm)"], ["panel_area_sqm", "Area (sqm)"],
                   ["labour_per_sqm", "Labour /sqm"], ["freight_per_sqm", "Freight /sqm"], ["wastage_pct", "Wastage %"],
                   ["design_pct", "Design %"], ["misc_pct", "Misc %"], ["pmc_pct", "PMC %"], ["oh_profit_pct", "OH & profit %"],
                 ].map(([k, lbl]) => (
@@ -266,7 +266,7 @@ export default function SystemDetail() {
                   </div>
                 ))}
                 <div className="space-y-1 flex flex-col justify-end">
-                  <Label className="text-xs">Powder coating</Label>
+                  <Label className="text-xs">Powder Coating</Label>
                   <div className="h-9 flex items-center">
                     <Switch checked={!!params.apply_powder_coating} disabled={ro}
                       onCheckedChange={(v) => setP("apply_powder_coating", v)} />
@@ -277,7 +277,7 @@ export default function SystemDetail() {
                   <div className="h-9 flex items-center gap-2">
                     <Switch checked={!!params.use_cut_optimization} disabled={ro}
                       onCheckedChange={(v) => setP("use_cut_optimization", v)} />
-                    <span className="text-[10px] text-muted-foreground">{params.use_cut_optimization ? "bar nesting" : "seedha wastage"}</span>
+                    <span className="text-[10px] text-muted-foreground">{params.use_cut_optimization ? "bar nesting" : "flat wastage"}</span>
                   </div>
                 </div>
                 {params.use_cut_optimization && (
@@ -294,7 +294,7 @@ export default function SystemDetail() {
                   <div className="h-9 flex items-center gap-2">
                     <Switch checked={!!params.use_sheet_optimization} disabled={ro}
                       onCheckedChange={(v) => setP("use_sheet_optimization", v)} />
-                    <span className="text-[10px] text-muted-foreground">{params.use_sheet_optimization ? "sheet ka hisaab" : "seedha area"}</span>
+                    <span className="text-[10px] text-muted-foreground">{params.use_sheet_optimization ? "2D sheet nesting" : "flat area"}</span>
                   </div>
                 </div>
               </CardContent>
