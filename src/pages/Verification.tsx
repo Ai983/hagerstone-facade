@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { BadgeCheck, XCircle, Loader2 } from "lucide-react";
 import {
   fetchSystems, fetchSystemMembers, fetchSystemMaterials, fetchMaterials, fetchSections, fetchActiveRateCard,
+  fetchAiConfig, fetchActualAverages,
 } from "@/lib/facadeApi";
 import { computeRate, resolveMember, resolveMaterial, formatINR } from "@/lib/rateEngine";
 
@@ -44,6 +45,15 @@ export default function Verification() {
   });
 
   const allPass = data?.rows.every((r) => r.pass);
+
+  const tier3Q = useQuery({
+    queryKey: ["tier3"],
+    queryFn: async () => {
+      const [cfg, avg] = await Promise.all([fetchAiConfig(), fetchActualAverages()]);
+      return { cfg, samples: avg.count };
+    },
+  });
+  const MIN_SAMPLES = 30; // rough floor; PRD: ~12-24 months of clean actuals
 
   return (
     <Layout>
@@ -94,6 +104,31 @@ export default function Verification() {
               </CardContent>
             </Card>
           </>
+        )}
+
+        {/* Tier 3 AI — gated learning features (ship disabled) */}
+        {tier3Q.data && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">AI learning (Tier 3 — gated)</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-[11px] text-muted-foreground">
+                Rate-suggestion, anomaly flagging and variance analysis need ~12–24 months of clean actuals to be trustworthy.
+                They ship <b>disabled</b>; enabling early produces confident-but-wrong numbers. Recorded actuals so far: <b>{tier3Q.data.samples}</b> (need ≥ {MIN_SAMPLES}).
+              </p>
+              {(["rate_suggest", "anomaly", "variance"] as const).map((f) => {
+                const enabled = tier3Q.data!.cfg[f]?.enabled;
+                const ready = tier3Q.data!.samples >= MIN_SAMPLES;
+                return (
+                  <div key={f} className="text-xs flex items-center justify-between border border-border rounded px-2 py-1.5">
+                    <span className="font-mono">{f}</span>
+                    {!enabled ? <span className="text-muted-foreground">disabled (enable in Masters → AI features once data exists)</span>
+                      : ready ? <span className="text-emerald-600">active</span>
+                      : <span className="text-amber-600">enabled but insufficient historical data — no suggestions shown</span>}
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
         )}
       </div>
     </Layout>

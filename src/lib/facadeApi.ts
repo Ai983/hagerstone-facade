@@ -5,7 +5,8 @@ import type {
   ProcurementRequest, Payment, BomLine, CalcConfigRow,
 } from "@/types/facade";
 import { DEFAULT_CALC_CONFIG, type CalcConfig } from "@/lib/guardrails";
-import { computeRate, resolveMember, resolveMaterial, type CutOptInput } from "@/lib/rateEngine";
+import { computeRate, resolveMember, resolveMaterial, computeAssemblyRate, type CutOptInput } from "@/lib/rateEngine";
+import type { Assembly, AssemblyMember, AssemblyMaterial } from "@/types/facade";
 
 /** Build the cut-optimization input for a system, or undefined when its toggle is OFF (baseline). */
 export function cutOptFor(system: FacadeSystem, rc: RateCard | null): CutOptInput | undefined {
@@ -92,7 +93,7 @@ export type SystemParamPatch = Partial<
     "name" | "category" | "description" | "panel_width_mm" | "panel_height_mm" | "panel_area_sqm" |
     "apply_powder_coating" | "labour_per_sqm" | "freight_per_sqm" | "wastage_pct" | "design_pct" |
     "misc_pct" | "pmc_pct" | "oh_profit_pct" | "is_active" |
-    "use_cut_optimization" | "apply_scrap_credit">
+    "use_cut_optimization" | "apply_scrap_credit" | "use_sheet_optimization">
 >;
 
 export async function updateSystemParams(id: string, patch: SystemParamPatch): Promise<void> {
@@ -181,9 +182,26 @@ export async function updateRateCard(
   id: string,
   patch: Partial<Pick<RateCard,
     "valid_until" | "escalation_note" | "aluminium_basis" | "freight_handling_pct" |
-    "stock_bar_length_m" | "kerf_mm" | "bar_trim_mm" | "min_usable_offcut_mm" | "scrap_recovery_pct">>
+    "stock_bar_length_m" | "kerf_mm" | "bar_trim_mm" | "min_usable_offcut_mm" | "scrap_recovery_pct" |
+    "import_duty_pct" | "price_source" | "aluminium_per_kg">>
 ): Promise<void> {
   const { error } = await supabase.from("rate_cards").update(patch).eq("id", id);
+  if (error) throw error;
+}
+
+// ---------------- Price feed (A3, semi-live) ----------------
+
+export async function fetchPriceFeedLog(): Promise<import("@/types/facade").PriceFeedLog[]> {
+  const { data, error } = await supabase.from("price_feed_log").select("*")
+    .order("fetched_at", { ascending: false }).limit(20);
+  if (error) return [];
+  return (data as import("@/types/facade").PriceFeedLog[]) ?? [];
+}
+
+export async function addPriceObservation(o: {
+  metal: string; index_name: string; value_per_kg_inr: number; source_note: string | null;
+}): Promise<void> {
+  const { error } = await supabase.from("price_feed_log").insert(o);
   if (error) throw error;
 }
 
@@ -248,6 +266,77 @@ export async function computeSystemCurrentRate(
   return { rate_per_sqm: breakdown.rate_per_sqm, breakdown };
 }
 
+// ---------------- A1 Parametric assemblies ----------------
+
+export async function fetchAssemblies(): Promise<Assembly[]> {
+  const { data, error } = await supabase.from("assemblies").select("*").order("code");
+  if (error) return [];
+  return (data as Assembly[]) ?? [];
+}
+export async function fetchAssembly(id: string): Promise<Assembly> {
+  const { data, error } = await supabase.from("assemblies").select("*").eq("id", id).single();
+  if (error) throw error; return data as Assembly;
+}
+export async function fetchAssemblyMembers(assemblyId: string): Promise<AssemblyMember[]> {
+  const { data, error } = await supabase.from("assembly_members").select("*").eq("assembly_id", assemblyId).order("sort_order");
+  if (error) throw error; return data as AssemblyMember[];
+}
+export async function fetchAssemblyMaterials(assemblyId: string): Promise<AssemblyMaterial[]> {
+  const { data, error } = await supabase.from("assembly_materials").select("*").eq("assembly_id", assemblyId).order("sort_order");
+  if (error) throw error; return data as AssemblyMaterial[];
+}
+export async function createAssembly(a: Partial<Assembly>): Promise<Assembly> {
+  const { data, error } = await supabase.from("assemblies").insert(a).select().single();
+  if (error) throw error; return data as Assembly;
+}
+export async function updateAssembly(id: string, patch: Partial<Assembly>): Promise<void> {
+  const { error } = await supabase.from("assemblies").update(patch).eq("id", id);
+  if (error) throw error;
+}
+export async function replaceAssemblyMembers(assemblyId: string, rows: Omit<AssemblyMember, "id" | "assembly_id">[]): Promise<void> {
+  const del = await supabase.from("assembly_members").delete().eq("assembly_id", assemblyId);
+  if (del.error) throw del.error;
+  if (rows.length) {
+    const ins = await supabase.from("assembly_members").insert(rows.map((r, i) => ({ ...r, assembly_id: assemblyId, sort_order: i })));
+    if (ins.error) throw ins.error;
+  }
+}
+export async function replaceAssemblyMaterials(assemblyId: string, rows: Omit<AssemblyMaterial, "id" | "assembly_id">[]): Promise<void> {
+  const del = await supabase.from("assembly_materials").delete().eq("assembly_id", assemblyId);
+  if (del.error) throw del.error;
+  if (rows.length) {
+    const ins = await supabase.from("assembly_materials").insert(rows.map((r, i) => ({ ...r, assembly_id: assemblyId, sort_order: i })));
+    if (ins.error) throw ins.error;
+  }
+}
+
+/** Compute an assembly's rate/sqm + breakdown at W×H×N from live data + active rate card. */
+export async function computeAssemblyCurrentRate(
+  assemblyId: string, W: number, H: number, N: number
+): Promise<{ rate_per_sqm: number; breakdown: RateBreakdown; area: number } | null> {
+  const [asm, members, mats, materials, sections, rc] = await Promise.all([
+    fetchAssembly(assemblyId), fetchAssemblyMembers(assemblyId), fetchAssemblyMaterials(assemblyId),
+    fetchMaterials(), fetchSections(), fetchActiveRateCard(),
+  ]);
+  if (!rc) return null;
+  const matById = Object.fromEntries(materials.map((m) => [m.id, m]));
+  const secById = Object.fromEntries(sections.map((s) => [s.id, s]));
+  const breakdown = computeAssemblyRate(
+    {
+      apply_powder_coating: asm.apply_powder_coating, labour_per_sqm: asm.labour_per_sqm, freight_per_sqm: asm.freight_per_sqm,
+      wastage_pct: asm.wastage_pct, design_pct: asm.design_pct, misc_pct: asm.misc_pct, pmc_pct: asm.pmc_pct, oh_profit_pct: asm.oh_profit_pct,
+    },
+    members.map((m) => ({
+      orientation: m.orientation, base_cutlength_m: Number(m.base_cutlength_m) || 0, number: m.number, qty: Number(m.qty) || 0,
+      unit_weight_kg_per_m: m.unit_weight_kg_per_m != null ? Number(m.unit_weight_kg_per_m) : Number(m.section_id ? secById[m.section_id]?.default_unit_weight_kg_per_m : 0) || 0,
+      section_key: m.section_id ?? m.member_name, member_name: m.member_name,
+    })),
+    mats.map((m) => ({ qty_per_unit: Number(m.qty_per_unit) || 0, rate: m.material_id ? Number(matById[m.material_id]?.default_rate) || 0 : 0, is_infill: m.is_infill })),
+    rc, W, H, N
+  );
+  return { rate_per_sqm: breakdown.rate_per_sqm, breakdown, area: (W / 1000) * (H / 1000) * Math.max(1, N) };
+}
+
 // ---------------- Projects ----------------
 
 export async function fetchProjects(): Promise<Project[]> {
@@ -310,6 +399,7 @@ export type EstimateLineDraft = {
   system_id: string | null; elevation_ref: string | null;
   area_sqm: number; rate_per_sqm: number; notes: string | null;
   area_source?: string; ai_confidence?: number | null; ai_confidence_reason?: string | null;
+  assembly_id?: string | null; inst_width_mm?: number | null; inst_height_mm?: number | null; inst_count?: number | null;
 };
 
 /** Replace all lines of an estimate and update its total_amount. amount is a generated column. */
@@ -328,6 +418,10 @@ export async function saveEstimateLines(
       area_source: l.area_source ?? "manual",
       ai_confidence: l.ai_confidence ?? null,
       ai_confidence_reason: l.ai_confidence_reason ?? null,
+      assembly_id: l.assembly_id ?? null,
+      inst_width_mm: l.inst_width_mm ?? null,
+      inst_height_mm: l.inst_height_mm ?? null,
+      inst_count: l.inst_count ?? null,
     };
   });
   if (snapLines.length) {
@@ -530,6 +624,116 @@ export async function fetchActualAverages(): Promise<{ wastage_pct: number | nul
   const vals = (data as any[]).map((r) => Number(r.wastage_pct_actual)).filter((n) => !isNaN(n));
   if (!vals.length) return { wastage_pct: null, count: 0 };
   return { wastage_pct: vals.reduce((s, v) => s + v, 0) / vals.length, count: vals.length };
+}
+
+// ---------------- A5 compatibility rules ----------------
+
+export async function fetchCompatibilityRules(): Promise<import("@/types/facade").CompatibilityRule[]> {
+  const { data, error } = await supabase.from("compatibility_rules").select("*").order("rule_type");
+  if (error) return [];
+  return (data as import("@/types/facade").CompatibilityRule[]) ?? [];
+}
+export async function upsertCompatibilityRule(r: Partial<import("@/types/facade").CompatibilityRule>): Promise<void> {
+  const { error } = await supabase.from("compatibility_rules").upsert(r);
+  if (error) throw error;
+}
+export async function deleteCompatibilityRule(id: string): Promise<void> {
+  const { error } = await supabase.from("compatibility_rules").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ---------------- Tier 2 AI: estimate reviews (AI-4) ----------------
+
+export async function createEstimateReview(estimateId: string, findings: unknown, riskSummary: string): Promise<void> {
+  const { error } = await supabase.from("estimate_reviews").insert({ estimate_id: estimateId, findings, risk_summary: riskSummary, created_by_ai: true });
+  if (error) throw error;
+}
+export async function fetchEstimateReviews(estimateId: string): Promise<Array<{ id: string; findings: any; risk_summary: string | null; created_at: string }>> {
+  const { data, error } = await supabase.from("estimate_reviews").select("*").eq("estimate_id", estimateId).order("created_at", { ascending: false }).limit(5);
+  if (error) return [];
+  return (data as any[]) ?? [];
+}
+
+// ---------------- A2 infill pieces (sheet nesting) ----------------
+
+export async function fetchInfillPieces(systemId: string): Promise<import("@/types/facade").InfillPiece[]> {
+  const { data, error } = await supabase.from("infill_pieces").select("*").eq("system_id", systemId).order("sort_order");
+  if (error) return [];
+  return (data as import("@/types/facade").InfillPiece[]) ?? [];
+}
+export async function replaceInfillPieces(
+  systemId: string, rows: Array<{ material_id: string | null; width_mm: number; height_mm: number; count: number; allow_rotation: boolean }>
+): Promise<void> {
+  const del = await supabase.from("infill_pieces").delete().eq("system_id", systemId);
+  if (del.error) throw del.error;
+  if (rows.length) {
+    const ins = await supabase.from("infill_pieces").insert(rows.map((r, i) => ({ ...r, system_id: systemId, sort_order: i })));
+    if (ins.error) throw ins.error;
+  }
+}
+
+// ---------------- AI core (config, runs, proposals) ----------------
+
+export async function fetchAiConfig(): Promise<Record<string, { enabled: boolean; threshold: number }>> {
+  const { data, error } = await supabase.from("ai_config").select("feature, enabled, confidence_threshold");
+  if (error) return {};
+  const map: Record<string, { enabled: boolean; threshold: number }> = {};
+  for (const r of (data as any[]) ?? []) map[r.feature] = { enabled: !!r.enabled, threshold: Number(r.confidence_threshold) || 70 };
+  return map;
+}
+export async function fetchAiConfigRows(): Promise<import("@/types/facade").AiConfigRow[]> {
+  const { data, error } = await supabase.from("ai_config").select("*").order("feature");
+  if (error) return [];
+  return (data as import("@/types/facade").AiConfigRow[]) ?? [];
+}
+export async function updateAiConfig(feature: string, patch: { enabled?: boolean; confidence_threshold?: number }): Promise<void> {
+  const { error } = await supabase.from("ai_config").update({ ...patch, updated_at: new Date().toISOString() }).eq("feature", feature);
+  if (error) throw error;
+}
+export async function logAiRun(r: {
+  feature: string; input_ref?: string | null; output: unknown; confidence: number;
+  confidence_reason: string; accepted: boolean; actor_id: string | null;
+}): Promise<void> {
+  try { await supabase.from("ai_runs").insert({ ...r, input_ref: r.input_ref ?? null }); }
+  catch (e) { console.warn("ai_runs insert failed", e); }
+}
+
+// AI-2 tender scope
+export async function insertScopeItems(projectId: string, items: Array<Omit<import("@/types/facade").TenderScopeItem, "id" | "project_id" | "created_at" | "status">>): Promise<void> {
+  if (!items.length) return;
+  const { error } = await supabase.from("tender_scope_items").insert(items.map((i) => ({ ...i, project_id: projectId, status: "proposed" })));
+  if (error) throw error;
+}
+export async function fetchScopeItems(projectId: string): Promise<import("@/types/facade").TenderScopeItem[]> {
+  const { data, error } = await supabase.from("tender_scope_items").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
+  if (error) return [];
+  return (data as import("@/types/facade").TenderScopeItem[]) ?? [];
+}
+export async function setScopeItemStatus(id: string, status: string): Promise<void> {
+  const { error } = await supabase.from("tender_scope_items").update({ status }).eq("id", id);
+  if (error) throw error;
+}
+
+// AI-3 material price proposals
+export async function insertPriceProposals(rows: Array<{ material_id: string | null; proposed_rate: number; current_rate: number | null; source_doc: string | null; confidence: number; }>): Promise<void> {
+  if (!rows.length) return;
+  const { error } = await supabase.from("material_price_proposals").insert(rows.map((r) => ({ ...r, status: "proposed" })));
+  if (error) throw error;
+}
+export async function fetchPriceProposals(): Promise<import("@/types/facade").MaterialPriceProposal[]> {
+  const { data, error } = await supabase.from("material_price_proposals").select("*").eq("status", "proposed").order("created_at", { ascending: false });
+  if (error) return [];
+  return (data as import("@/types/facade").MaterialPriceProposal[]) ?? [];
+}
+export async function acceptPriceProposal(id: string, materialId: string, rate: number, decidedBy: string | null): Promise<void> {
+  const upd = await supabase.from("materials").update({ default_rate: rate }).eq("id", materialId);
+  if (upd.error) throw upd.error;
+  const { error } = await supabase.from("material_price_proposals").update({ status: "accepted", decided_by: decidedBy }).eq("id", id);
+  if (error) throw error;
+}
+export async function rejectPriceProposal(id: string, decidedBy: string | null): Promise<void> {
+  const { error } = await supabase.from("material_price_proposals").update({ status: "rejected", decided_by: decidedBy }).eq("id", id);
+  if (error) throw error;
 }
 
 // ---------------- Employees (hub, RLS-limited) ----------------

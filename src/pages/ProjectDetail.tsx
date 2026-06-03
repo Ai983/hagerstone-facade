@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -16,8 +18,14 @@ import {
   fetchQuotations, createQuotationFromEstimate,
   fetchProjectStages, updateStage, fetchEmployees, nextRef,
   buildProcurementBom, createProcurementExport, createPaymentExport,
-  fetchMarkupTiers, updateEstimateMeta, fetchEstimateRevisions, type EstimateLineDraft,
+  fetchMarkupTiers, updateEstimateMeta, fetchEstimateRevisions,
+  fetchAssemblies, computeAssemblyCurrentRate, logAiRun,
+  fetchAiConfig, createEstimateReview, fetchEstimateReviews, type EstimateLineDraft,
 } from "@/lib/facadeApi";
+import { reviewEstimate, draftFromBrief } from "@/lib/aiService";
+import { ShieldCheck, Wand2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { Boxes } from "lucide-react";
 import { logAudit } from "@/lib/audit";
 import { formatINR } from "@/lib/rateEngine";
 import { agingHours, agingLevel, AGING_CLASS, AGING_LABEL, fmtHours } from "@/lib/aging";
@@ -25,6 +33,7 @@ import {
   buildCpsProcurementPayload, buildFinancePaymentPayload, downloadJson, downloadCsv,
 } from "@/lib/exporters";
 import { ActualsPanel } from "@/components/ActualsPanel";
+import { TenderScopePanel } from "@/components/TenderScopePanel";
 import { runElevationTakeoff, fileToBase64, CONFIDENCE_THRESHOLD } from "@/lib/elevationTakeoff";
 import { Download, Sparkles } from "lucide-react";
 
@@ -52,6 +61,14 @@ export default function ProjectDetail() {
   const stagesQ = useQuery({ queryKey: ["stages", id], queryFn: () => fetchProjectStages(id), enabled: !!id });
   const empQ = useQuery({ queryKey: ["employees"], queryFn: fetchEmployees });
   const tiersQ = useQuery({ queryKey: ["markupTiers"], queryFn: fetchMarkupTiers });
+  const asmQ = useQuery({ queryKey: ["assemblies"], queryFn: fetchAssemblies });
+  const [asmDlg, setAsmDlg] = useState(false);
+  const [asmForm, setAsmForm] = useState({ assembly_id: "", w: "", h: "", count: "1", elevation_ref: "" });
+  const aiCfgQ = useQuery({ queryKey: ["aiConfig"], queryFn: fetchAiConfig });
+  const reviewQ = useQuery({ queryKey: ["estimateReviews", selEst], queryFn: () => fetchEstimateReviews(selEst!), enabled: !!selEst });
+  const [reviewing, setReviewing] = useState(false);
+  const [nlDlg, setNlDlg] = useState(false);
+  const [nlBrief, setNlBrief] = useState("");
   const revQ = useQuery({ queryKey: ["estimateRevisions", selEst], queryFn: () => fetchEstimateRevisions(selEst!), enabled: !!selEst });
 
   const [lines, setLines] = useState<EstimateLineDraft[]>([]);
@@ -61,6 +78,7 @@ export default function ProjectDetail() {
       system_id: l.system_id, elevation_ref: l.elevation_ref, area_sqm: l.area_sqm,
       rate_per_sqm: l.rate_per_sqm, notes: l.notes,
       area_source: l.area_source, ai_confidence: l.ai_confidence, ai_confidence_reason: l.ai_confidence_reason,
+      assembly_id: l.assembly_id, inst_width_mm: l.inst_width_mm, inst_height_mm: l.inst_height_mm, inst_count: l.inst_count,
     })));
   }, [linesQ.data]);
 
@@ -169,6 +187,65 @@ export default function ProjectDetail() {
 
   const addLine = () => setLines((a) => [...a, { system_id: sysQ.data?.[0]?.id ?? null, elevation_ref: "", area_sqm: 0, rate_per_sqm: 0, notes: "", area_source: "manual" }]);
 
+  const addFromAssembly = async () => {
+    const W = Number(asmForm.w), H = Number(asmForm.h), N = Math.max(1, Math.round(Number(asmForm.count) || 1));
+    if (!asmForm.assembly_id || W <= 0 || H <= 0) { toast.error("Pick an assembly and enter W×H"); return; }
+    try {
+      const r = await computeAssemblyCurrentRate(asmForm.assembly_id, W, H, N);
+      if (!r) { toast.error("No active rate card"); return; }
+      setLines((a) => [...a, {
+        system_id: null, elevation_ref: asmForm.elevation_ref || null, area_sqm: Number(r.area.toFixed(4)),
+        rate_per_sqm: Number(r.rate_per_sqm.toFixed(4)), notes: null, area_source: "manual",
+        assembly_id: asmForm.assembly_id, inst_width_mm: W, inst_height_mm: H, inst_count: N,
+      }]);
+      setAsmDlg(false); setAsmForm({ assembly_id: "", w: "", h: "", count: "1", elevation_ref: "" });
+      toast.success("Assembly line added — Save to persist");
+    } catch (e: any) { toast.error(e.message); }
+  };
+  const asmById = useMemo(() => Object.fromEntries((asmQ.data ?? []).map((x) => [x.id, x])), [asmQ.data]);
+
+  // AI-4: second-checker (advisory; changes no number)
+  const runReview = async () => {
+    if (!selEst || !selectedEstimate) return;
+    setReviewing(true);
+    try {
+      const payload = {
+        code: selectedEstimate.code, version: selectedEstimate.version, subtotal: total,
+        contingency_pct: contingencyPct, grand_total: grandTotal, markup_tier: selectedTier?.name ?? null,
+        lines: lines.map((l) => ({ system: l.system_id ? sysById[l.system_id]?.code : (l.assembly_id ? "ASSEMBLY" : null), elevation: l.elevation_ref, area_sqm: l.area_sqm, rate_per_sqm: l.rate_per_sqm })),
+      };
+      const res = await reviewEstimate(payload);
+      await createEstimateReview(selEst, res.findings, res.risk_summary);
+      await logAiRun({ feature: "review", input_ref: selEst, output: res, confidence: 0, confidence_reason: "advisory review", accepted: false, actor_id: user?.id ?? null });
+      toast.success(`Review complete · ${res.findings.length} finding(s)`);
+      qc.invalidateQueries({ queryKey: ["estimateReviews", selEst] });
+    } catch (e: any) { toast.error(`Review failed: ${e.message ?? e}`); } finally { setReviewing(false); }
+  };
+
+  // AI-5: natural-language draft → estimate lines
+  const runNlDraft = async () => {
+    if (!nlBrief.trim()) { toast.error("Describe the scope first"); return; }
+    setBusy(true);
+    try {
+      const codes = (sysQ.data ?? []).map((s) => s.code);
+      const res = await draftFromBrief(nlBrief, codes);
+      const sysByCode = Object.fromEntries((sysQ.data ?? []).map((s) => [s.code, s]));
+      const newLines: EstimateLineDraft[] = [];
+      for (const l of res.lines) {
+        const sys = l.system_code ? sysByCode[l.system_code] : null;
+        let rate = 0;
+        if (sys) { try { const r = await computeSystemCurrentRate(sys.id, { ohOverride: l.oh_profit_pct ?? null }); if (r) rate = Number(r.rate_per_sqm.toFixed(4)); } catch { /* */ } }
+        newLines.push({ system_id: sys?.id ?? null, elevation_ref: null, area_sqm: l.area_sqm, rate_per_sqm: rate, notes: l.notes, area_source: "ai_extracted", ai_confidence: l.confidence, ai_confidence_reason: nlBrief.slice(0, 120) });
+      }
+      if (!newLines.length) { toast.error("Couldn't map the brief to systems"); return; }
+      setLines((a) => [...a, ...newLines]);
+      await logAiRun({ feature: "nl_draft", input_ref: selEst, output: res, confidence: res.confidence, confidence_reason: res.confidence_reason, accepted: true, actor_id: user?.id ?? null });
+      setNlDlg(false); setNlBrief("");
+      toast.success(`${newLines.length} draft lines added — review & Save`);
+    } catch (e: any) { toast.error(`Draft failed: ${e.message ?? e}`); } finally { setBusy(false); }
+  };
+  const aiCfg = aiCfgQ.data ?? {};
+
   const handleAiTakeoff = async (file: File) => {
     if (!sysQ.data?.length) return;
     setAiBusy(true);
@@ -176,6 +253,7 @@ export default function ProjectDetail() {
       toast.info("Analysing elevation… this can take ~20s");
       const b64 = await fileToBase64(file);
       const result = await runElevationTakeoff(b64, sysQ.data.map((s) => ({ code: s.code, name: s.name, category: s.category })));
+      logAiRun({ feature: "takeoff", input_ref: id, output: result, confidence: result.overall_confidence, confidence_reason: "elevation take-off", accepted: false, actor_id: user?.id ?? null });
       const sysByCode = Object.fromEntries(sysQ.data.map((s) => [s.code, s]));
       let auto = 0, manual = 0;
       const newLines: EstimateLineDraft[] = [];
@@ -337,6 +415,40 @@ export default function ProjectDetail() {
                     {aiBusy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}AI take-off
                   </Button>
                   <Button size="sm" variant="outline" onClick={addLine}><Plus className="h-3.5 w-3.5 mr-1" />Add line</Button>
+                  {aiCfg.nl_draft?.enabled && (
+                    <Dialog open={nlDlg} onOpenChange={setNlDlg}>
+                      <DialogTrigger asChild><Button size="sm" variant="outline"><Wand2 className="h-3.5 w-3.5 mr-1" />AI draft</Button></DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader><DialogTitle>Draft estimate lines from a brief</DialogTitle></DialogHeader>
+                        <div className="space-y-2">
+                          <Textarea rows={3} value={nlBrief} placeholder="e.g. 400 sqm straight glazing 6+12+6 DGU at 18% margin; 40 sqm louvres" onChange={(e) => setNlBrief(e.target.value)} />
+                          <p className="text-[11px] text-muted-foreground">AI maps the brief to your systems and snapshots their rates. Review every line before saving — AI never sets a price.</p>
+                        </div>
+                        <DialogFooter><Button onClick={runNlDraft} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Draft lines"}</Button></DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  )}
+                  <Dialog open={asmDlg} onOpenChange={setAsmDlg}>
+                    <DialogTrigger asChild><Button size="sm" variant="outline" disabled={!asmQ.data?.length}><Boxes className="h-3.5 w-3.5 mr-1" />From assembly</Button></DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader><DialogTitle>Add line from assembly</DialogTitle></DialogHeader>
+                      <div className="space-y-3">
+                        <div className="space-y-1"><Label>Assembly</Label>
+                          <select className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm" value={asmForm.assembly_id} onChange={(e) => { const x = asmById[e.target.value]; setAsmForm({ ...asmForm, assembly_id: e.target.value, w: x ? String(x.base_width_mm) : asmForm.w, h: x ? String(x.base_height_mm) : asmForm.h }); }}>
+                            <option value="">Pick…</option>
+                            {(asmQ.data ?? []).map((x) => <option key={x.id} value={x.id}>{x.code} · {x.name}</option>)}
+                          </select>
+                        </div>
+                        <div className="grid grid-cols-4 gap-2">
+                          <div className="space-y-1"><Label>W mm</Label><Input type="number" value={asmForm.w} onChange={(e) => setAsmForm({ ...asmForm, w: e.target.value })} /></div>
+                          <div className="space-y-1"><Label>H mm</Label><Input type="number" value={asmForm.h} onChange={(e) => setAsmForm({ ...asmForm, h: e.target.value })} /></div>
+                          <div className="space-y-1"><Label>Count</Label><Input type="number" value={asmForm.count} onChange={(e) => setAsmForm({ ...asmForm, count: e.target.value })} /></div>
+                          <div className="space-y-1"><Label>Elev.</Label><Input value={asmForm.elevation_ref} onChange={(e) => setAsmForm({ ...asmForm, elevation_ref: e.target.value })} /></div>
+                        </div>
+                      </div>
+                      <DialogFooter><Button onClick={addFromAssembly}>Add line</Button></DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                   <Button size="sm" variant="outline" onClick={handleSaveLines} disabled={busy}>{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}Save</Button>
                   <Button size="sm" onClick={handleGenerateQuote} disabled={busy || lines.length === 0}><FileSignature className="h-3.5 w-3.5 mr-1" />Generate quotation</Button>
                 </div>
@@ -367,11 +479,18 @@ export default function ProjectDetail() {
                 const amount = (Number(l.area_sqm) || 0) * (Number(l.rate_per_sqm) || 0);
                 return (
                   <div key={i} className="grid grid-cols-[1.4fr_90px_80px_110px_120px_28px] gap-2 items-center">
-                    <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" disabled={ro}
-                      value={l.system_id ?? ""} onChange={(e) => pickSystem(i, e.target.value)}>
-                      <option value="" disabled>Pick system…</option>
-                      {(sysQ.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.code} · {s.name}</option>)}
-                    </select>
+                    {l.assembly_id ? (
+                      <div className="h-8 flex items-center gap-1.5 text-sm truncate" title="Parametric assembly line">
+                        <Boxes className="h-3.5 w-3.5 text-primary shrink-0" />
+                        <span className="truncate">{asmById[l.assembly_id]?.name ?? "Assembly"} <span className="text-[10px] text-muted-foreground">{l.inst_width_mm}×{l.inst_height_mm}·{l.inst_count}</span></span>
+                      </div>
+                    ) : (
+                      <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" disabled={ro}
+                        value={l.system_id ?? ""} onChange={(e) => pickSystem(i, e.target.value)}>
+                        <option value="" disabled>Pick system…</option>
+                        {(sysQ.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.code} · {s.name}</option>)}
+                      </select>
+                    )}
                     <Input className="h-8" disabled={ro} value={l.elevation_ref ?? ""} placeholder="E1"
                       onChange={(e) => setLines((a) => a.map((x, j) => j === i ? { ...x, elevation_ref: e.target.value } : x))} />
                     <Input className="h-8" type="number" step="any" disabled={ro} value={l.area_sqm === 0 ? "" : String(l.area_sqm)}
@@ -491,6 +610,35 @@ export default function ProjectDetail() {
             </CardContent>
           </Card>
         )}
+
+        {/* AI-4 estimate second-checker (advisory) */}
+        {selectedEstimate && aiCfg.review?.enabled && (
+          <Card>
+            <CardHeader className="pb-3 flex-row items-center justify-between">
+              <CardTitle className="text-sm flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> AI second-checker</CardTitle>
+              {!ro && <Button size="sm" variant="outline" onClick={runReview} disabled={reviewing}>{reviewing ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5 mr-1" />}Review estimate</Button>}
+            </CardHeader>
+            <CardContent>
+              <p className="text-[11px] text-muted-foreground mb-2">Advisory QA on top of the deterministic guardrails. AI flags omissions/risks but changes no number.</p>
+              {reviewQ.data && reviewQ.data.length > 0 ? (
+                <div className="space-y-2">
+                  {reviewQ.data[0].risk_summary && <p className="text-sm">{reviewQ.data[0].risk_summary}</p>}
+                  <ul className="text-xs space-y-1">
+                    {(reviewQ.data[0].findings ?? []).map((f: any, i: number) => (
+                      <li key={i} className={`flex items-start gap-1.5 ${f.severity === "high" ? "text-destructive" : f.severity === "warn" ? "text-amber-600" : "text-muted-foreground"}`}>
+                        <span className="uppercase text-[9px] font-bold mt-0.5">{f.severity}</span>{f.message}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[10px] text-muted-foreground">Last reviewed {new Date(reviewQ.data[0].created_at).toLocaleString("en-IN")}</p>
+                </div>
+              ) : <p className="text-xs text-muted-foreground">No review yet.</p>}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* AI-2 tender scope extraction */}
+        {selectedEstimate && <TenderScopePanel projectId={id} onAddLines={(newLines) => { setLines((a) => [...a, ...newLines]); toast.info("Review the added lines, then Save the estimate"); }} />}
 
         {/* Estimate vs actual (v1.2 feedback loop) */}
         <ActualsPanel projectId={id} estimate={selectedEstimate} />

@@ -7,15 +7,18 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Save, Plus, Loader2 } from "lucide-react";
+import { Save, Plus, Loader2, Trash2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   fetchMaterials, fetchSections, fetchActiveRateCard, fetchRateCards,
   upsertMaterial, upsertSection, createRateCard, updateRateCard,
-  fetchCalcConfigRows, updateCalcConfig,
+  fetchCalcConfigRows, updateCalcConfig, fetchPriceFeedLog, addPriceObservation,
+  fetchAiConfigRows, updateAiConfig,
+  fetchCompatibilityRules, upsertCompatibilityRule, deleteCompatibilityRule,
 } from "@/lib/facadeApi";
 import { logAudit } from "@/lib/audit";
-import type { Material, Section, CalcConfigRow } from "@/types/facade";
+import { PriceParsePanel } from "@/components/PriceParsePanel";
+import type { Material, Section, CalcConfigRow, AiConfigRow } from "@/types/facade";
 
 export default function Masters() {
   const qc = useQueryClient();
@@ -27,6 +30,33 @@ export default function Masters() {
   const rcQ = useQuery({ queryKey: ["activeRateCard"], queryFn: fetchActiveRateCard });
   const rcAllQ = useQuery({ queryKey: ["rateCards"], queryFn: fetchRateCards });
   const cfgQ = useQuery({ queryKey: ["calcConfigRows"], queryFn: fetchCalcConfigRows });
+  const feedQ = useQuery({ queryKey: ["priceFeed"], queryFn: fetchPriceFeedLog });
+  const aiCfgQ = useQuery({ queryKey: ["aiConfigRows"], queryFn: fetchAiConfigRows });
+  const compatQ = useQuery({ queryKey: ["compatRules"], queryFn: fetchCompatibilityRules });
+  const [newRule, setNewRule] = useState({ rule_type: "", section_id: "", material_id: "", message: "" });
+
+  const addRule = async () => {
+    if (!newRule.section_id || !newRule.material_id) { toast.error("Pick a section + material"); return; }
+    try {
+      await upsertCompatibilityRule({ rule_type: newRule.rule_type || "pairing", section_id: newRule.section_id, material_id: newRule.material_id, message: newRule.message || "Check this section/material pairing.", severity: "warn", is_active: true });
+      toast.success("Rule added");
+      setNewRule({ rule_type: "", section_id: "", material_id: "", message: "" });
+      qc.invalidateQueries({ queryKey: ["compatRules"] });
+    } catch (e: any) { toast.error(e.message); }
+  };
+  const removeRule = async (id: string) => { try { await deleteCompatibilityRule(id); qc.invalidateQueries({ queryKey: ["compatRules"] }); } catch (e: any) { toast.error(e.message); } };
+  const [obs, setObs] = useState({ index_name: "LME-3M", value_per_kg_inr: "" });
+  const [aiCfg, setAiCfg] = useState<AiConfigRow[]>([]);
+  useEffect(() => { if (aiCfgQ.data) setAiCfg(aiCfgQ.data); }, [aiCfgQ.data]);
+
+  const saveAiCfg = async (row: AiConfigRow) => {
+    try {
+      await updateAiConfig(row.feature, { enabled: row.enabled, confidence_threshold: Number(row.confidence_threshold) });
+      await logAudit("ai_config", row.id, "update", user?.id ?? null, { feature: row.feature, enabled: row.enabled });
+      toast.success(`Saved ${row.feature}`);
+      qc.invalidateQueries({ queryKey: ["aiConfigRows"] }); qc.invalidateQueries({ queryKey: ["aiConfig"] });
+    } catch (e: any) { toast.error(e.message); }
+  };
 
   const [mats, setMats] = useState<Material[]>([]);
   const [secs, setSecs] = useState<Section[]>([]);
@@ -37,7 +67,7 @@ export default function Masters() {
 
   // v1.1/v1.2 active rate-card settings (validity / escalation / landed base / cut-opt bars)
   const [rcSettings, setRcSettings] = useState({
-    valid_until: "", escalation_note: "", aluminium_basis: "landed", freight_handling_pct: "0",
+    valid_until: "", escalation_note: "", aluminium_basis: "landed", freight_handling_pct: "0", import_duty_pct: "0",
     stock_bar_length_m: "6", kerf_mm: "4", bar_trim_mm: "15", min_usable_offcut_mm: "500", scrap_recovery_pct: "70",
   });
   useEffect(() => {
@@ -46,6 +76,7 @@ export default function Masters() {
       escalation_note: rcQ.data.escalation_note ?? "",
       aluminium_basis: rcQ.data.aluminium_basis ?? "landed",
       freight_handling_pct: String(rcQ.data.freight_handling_pct ?? 0),
+      import_duty_pct: String(rcQ.data.import_duty_pct ?? 0),
       stock_bar_length_m: String(rcQ.data.stock_bar_length_m ?? 6),
       kerf_mm: String(rcQ.data.kerf_mm ?? 4),
       bar_trim_mm: String(rcQ.data.bar_trim_mm ?? 15),
@@ -66,6 +97,7 @@ export default function Masters() {
         escalation_note: rcSettings.escalation_note || null,
         aluminium_basis: rcSettings.aluminium_basis,
         freight_handling_pct: Number(rcSettings.freight_handling_pct) || 0,
+        import_duty_pct: Number(rcSettings.import_duty_pct) || 0,
         stock_bar_length_m: Number(rcSettings.stock_bar_length_m) || 6,
         kerf_mm: Number(rcSettings.kerf_mm) || 0,
         bar_trim_mm: Number(rcSettings.bar_trim_mm) || 0,
@@ -74,6 +106,28 @@ export default function Masters() {
       });
       await logAudit("rate_card", rcQ.data.id, "update_settings", user?.id ?? null, rcSettings);
       toast.success("Rate card settings saved");
+      qc.invalidateQueries({ queryKey: ["activeRateCard"] });
+    } catch (e: any) { toast.error(e.message); }
+  };
+
+  const recordObs = async () => {
+    if (!obs.value_per_kg_inr) { toast.error("Enter a value/kg"); return; }
+    try {
+      await addPriceObservation({ metal: "aluminium", index_name: obs.index_name, value_per_kg_inr: Number(obs.value_per_kg_inr), source_note: "manual entry" });
+      await logAudit("price_feed", null, "observe", user?.id ?? null, obs);
+      toast.success("Price observation logged");
+      setObs({ ...obs, value_per_kg_inr: "" });
+      qc.invalidateQueries({ queryKey: ["priceFeed"] });
+    } catch (e: any) { toast.error(e.message); }
+  };
+  const applyLatestToCard = async () => {
+    const latest = feedQ.data?.[0];
+    if (!latest?.value_per_kg_inr || !rcQ.data) return;
+    if (!confirm(`Update active rate card aluminium from Rs.${rcQ.data.aluminium_per_kg} to Rs.${latest.value_per_kg_inr}/kg (index ${latest.index_name})?`)) return;
+    try {
+      await updateRateCard(rcQ.data.id, { aluminium_per_kg: Number(latest.value_per_kg_inr), price_source: "feed" });
+      await logAudit("rate_card", rcQ.data.id, "apply_feed_price", user?.id ?? null, { from: rcQ.data.aluminium_per_kg, to: latest.value_per_kg_inr, index: latest.index_name });
+      toast.success("Aluminium rate updated from feed");
       qc.invalidateQueries({ queryKey: ["activeRateCard"] });
     } catch (e: any) { toast.error(e.message); }
   };
@@ -90,7 +144,13 @@ export default function Masters() {
 
   const saveMaterial = async (m: Material) => {
     try {
-      await upsertMaterial({ id: m.id, name: m.name, category: m.category, unit: m.unit, default_rate: Number(m.default_rate), is_infill: m.is_infill, is_active: m.is_active });
+      await upsertMaterial({
+        id: m.id, name: m.name, category: m.category, unit: m.unit, default_rate: Number(m.default_rate),
+        is_infill: m.is_infill, is_active: m.is_active,
+        sheet_width_mm: (m.sheet_width_mm as any) === "" || m.sheet_width_mm == null ? null : Number(m.sheet_width_mm),
+        sheet_height_mm: (m.sheet_height_mm as any) === "" || m.sheet_height_mm == null ? null : Number(m.sheet_height_mm),
+        sheet_edge_trim_mm: (m.sheet_edge_trim_mm as any) === "" || m.sheet_edge_trim_mm == null ? null : Number(m.sheet_edge_trim_mm),
+      });
       await logAudit("material", m.id, "update", user?.id ?? null, { name: m.name });
       toast.success(`Saved ${m.name}`);
       qc.invalidateQueries({ queryKey: ["materials"] });
@@ -156,6 +216,8 @@ export default function Masters() {
                     </select></div>
                   <div className="space-y-1"><Label className="text-xs">Freight/handling % {rcSettings.aluminium_basis === "landed" && "(ignored)"}</Label>
                     <Input className="h-8" type="number" step="any" value={rcSettings.freight_handling_pct} onChange={(e) => setRcSettings({ ...rcSettings, freight_handling_pct: e.target.value })} /></div>
+                  <div className="space-y-1"><Label className="text-xs">Import duty % {rcSettings.aluminium_basis === "landed" && "(ignored)"}</Label>
+                    <Input className="h-8" type="number" step="any" value={rcSettings.import_duty_pct} onChange={(e) => setRcSettings({ ...rcSettings, import_duty_pct: e.target.value })} /></div>
                   <Button className="h-8" onClick={saveRcSettings}><Save className="h-3.5 w-3.5 mr-1" />Save settings</Button>
                 </div>
                 <div className="space-y-1 mt-2"><Label className="text-xs">Escalation note (copied onto quotations)</Label>
@@ -191,6 +253,31 @@ export default function Masters() {
           </CardContent>
         </Card>
 
+        {/* Price feed (A3 — semi-live, human-in-the-loop) */}
+        {!ro && (
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Aluminium price feed</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-[11px] text-muted-foreground">Log an index observation (e.g. LME/MCX). Applying to the rate card is one-click and audited — never silent. A reliable free INR feed isn't guaranteed; manual entry + the v1.1 staleness reminder is the realistic default.</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="space-y-1"><Label className="text-xs">Index</Label><Input className="h-8 w-32" value={obs.index_name} onChange={(e) => setObs({ ...obs, index_name: e.target.value })} /></div>
+                <div className="space-y-1"><Label className="text-xs">Value ₹/kg</Label><Input className="h-8 w-28" type="number" step="any" value={obs.value_per_kg_inr} onChange={(e) => setObs({ ...obs, value_per_kg_inr: e.target.value })} /></div>
+                <Button className="h-8" variant="outline" onClick={recordObs}>Log observation</Button>
+                {feedQ.data && feedQ.data.length > 0 && rcQ.data && (
+                  <Button className="h-8" onClick={applyLatestToCard}>Apply latest (₹{feedQ.data[0].value_per_kg_inr}) to rate card</Button>
+                )}
+              </div>
+              {feedQ.data && feedQ.data.length > 0 && (
+                <div className="text-[11px] text-muted-foreground space-y-0.5">
+                  {feedQ.data.slice(0, 5).map((p) => (
+                    <div key={p.id}>{new Date(p.fetched_at).toLocaleDateString("en-IN")} · {p.index_name} · ₹{p.value_per_kg_inr}/kg</div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Calculator thresholds (v1.1 guardrails) */}
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-sm">Calculator thresholds</CardTitle></CardHeader>
@@ -209,6 +296,65 @@ export default function Masters() {
           </CardContent>
         </Card>
 
+        {/* AI settings */}
+        {!ro && (
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">AI features</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-[11px] text-muted-foreground">Enable/disable AI assists and set the confidence gate. Tier-3 learning features (rate_suggest / anomaly / variance) ship <b>disabled</b> — enable only after ~12–24 months of real actuals, or they produce confident-but-wrong numbers.</p>
+              <div className="grid grid-cols-[140px_70px_90px_1fr_32px] gap-2 text-[10px] uppercase text-muted-foreground px-1">
+                <span>Feature</span><span>Enabled</span><span>Threshold</span><span>Tier</span><span /></div>
+              {aiCfg.map((row, i) => {
+                const tier3 = ["rate_suggest", "anomaly", "variance"].includes(row.feature);
+                return (
+                  <div key={row.id} className="grid grid-cols-[140px_70px_90px_1fr_32px] gap-2 items-center">
+                    <span className="text-xs font-mono">{row.feature}</span>
+                    <div className="h-8 flex items-center"><Switch checked={row.enabled} onCheckedChange={(v) => setAiCfg((a) => a.map((x, j) => j === i ? { ...x, enabled: v } : x))} /></div>
+                    <Input className="h-8" type="number" step="any" value={String(row.confidence_threshold)} onChange={(e) => setAiCfg((a) => a.map((x, j) => j === i ? { ...x, confidence_threshold: e.target.value as any } : x))} />
+                    <span className={`text-[11px] ${tier3 ? "text-amber-600" : "text-muted-foreground"}`}>{tier3 ? "Tier 3 — needs historical data" : "Tier 1/2"}</span>
+                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => saveAiCfg(aiCfg[i])}><Save className="h-3.5 w-3.5" /></Button>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* A5 compatibility rules */}
+        {!ro && (
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Compatibility warnings</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-[11px] text-muted-foreground">Light plausibility checks (warn-only, not structural engineering). A rule fires when a system uses the chosen section and material together. Keep the set small.</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" value={newRule.section_id} onChange={(e) => setNewRule({ ...newRule, section_id: e.target.value })}>
+                  <option value="">Section…</option>
+                  {secs.map((s) => <option key={s.id} value={s.id}>{s.section_no} · {s.name}</option>)}
+                </select>
+                <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" value={newRule.material_id} onChange={(e) => setNewRule({ ...newRule, material_id: e.target.value })}>
+                  <option value="">Material…</option>
+                  {mats.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                <Input className="h-8 flex-1 min-w-[200px]" placeholder="Warning message" value={newRule.message} onChange={(e) => setNewRule({ ...newRule, message: e.target.value })} />
+                <Button className="h-8" variant="outline" onClick={addRule}><Plus className="h-3.5 w-3.5 mr-1" />Add rule</Button>
+              </div>
+              {compatQ.data && compatQ.data.length > 0 && (
+                <div className="space-y-1 pt-1">
+                  {compatQ.data.map((r) => (
+                    <div key={r.id} className="text-xs flex items-center justify-between border border-border rounded px-2 py-1">
+                      <span>{secs.find((s) => s.id === r.section_id)?.name ?? "?"} + {mats.find((m) => m.id === r.material_id)?.name ?? "?"} — {r.message}</span>
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => removeRule(r.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* AI-3 supplier price parsing */}
+        <PriceParsePanel />
+
         {/* Materials */}
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-sm">Materials ({mats.length})</CardTitle></CardHeader>
@@ -223,6 +369,14 @@ export default function Masters() {
                 <Input className="h-8" type="number" step="any" disabled={ro} value={String(m.default_rate)} onChange={(e) => setMats((a) => a.map((x, j) => j === i ? { ...x, default_rate: e.target.value as any } : x))} />
                 <div className="flex items-center h-8"><Switch disabled={ro} checked={m.is_infill} onCheckedChange={(v) => setMats((a) => a.map((x, j) => j === i ? { ...x, is_infill: v } : x))} /></div>
                 {!ro && <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => saveMaterial(mats[i])}><Save className="h-3.5 w-3.5" /></Button>}
+                {m.is_infill && (
+                  <div className="col-span-full flex items-center gap-1.5 -mt-1 pl-1 text-[10px] text-muted-foreground">
+                    sheet (for 2D nesting):
+                    <input className="h-7 w-20 rounded border border-input bg-background px-1.5 text-xs" type="number" step="any" disabled={ro} placeholder="W mm" value={m.sheet_width_mm == null ? "" : String(m.sheet_width_mm)} onChange={(e) => setMats((a) => a.map((x, j) => j === i ? { ...x, sheet_width_mm: e.target.value as any } : x))} />
+                    <input className="h-7 w-20 rounded border border-input bg-background px-1.5 text-xs" type="number" step="any" disabled={ro} placeholder="H mm" value={m.sheet_height_mm == null ? "" : String(m.sheet_height_mm)} onChange={(e) => setMats((a) => a.map((x, j) => j === i ? { ...x, sheet_height_mm: e.target.value as any } : x))} />
+                    <input className="h-7 w-20 rounded border border-input bg-background px-1.5 text-xs" type="number" step="any" disabled={ro} placeholder="trim mm" value={m.sheet_edge_trim_mm == null ? "" : String(m.sheet_edge_trim_mm)} onChange={(e) => setMats((a) => a.map((x, j) => j === i ? { ...x, sheet_edge_trim_mm: e.target.value as any } : x))} />
+                  </div>
+                )}
               </div>
             ))}
           </CardContent>

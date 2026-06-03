@@ -62,3 +62,29 @@ export function validateSystem(
 
   return out;
 }
+
+export interface CompatRule {
+  section_id: string | null;
+  material_id: string | null;
+  message: string | null;
+  is_active: boolean;
+}
+
+/**
+ * A5 light compatibility check (warn-only, not engineering): a rule fires when a
+ * system uses BOTH the rule's section and material together. No rules → no warnings.
+ */
+export function checkCompatibility(
+  sectionIds: Set<string>, materialIds: Set<string>, rules: CompatRule[]
+): Guard[] {
+  const out: Guard[] = [];
+  for (const r of rules) {
+    if (!r.is_active) continue;
+    const secHit = !r.section_id || sectionIds.has(r.section_id);
+    const matHit = !r.material_id || materialIds.has(r.material_id);
+    if (r.section_id && r.material_id && secHit && matHit) {
+      out.push({ severity: "warn", message: r.message || "Incompatible section/material pairing." });
+    }
+  }
+  return out;
+}

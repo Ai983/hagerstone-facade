@@ -15,18 +15,21 @@ export interface RateCardInput {
   // v1.1 landed-cost base (optional; defaults reproduce baseline)
   aluminium_basis?: "landed" | "stockist" | string | null;
   freight_handling_pct?: number | null;
+  // supplementary A4: import duty (optional; default 0 = no change)
+  import_duty_pct?: number | null;
 }
 
 /**
- * Effective aluminium rate per kg. When basis = 'stockist', apply the freight/
- * handling uplift; otherwise (default 'landed') use the rate as-is. With the
- * shipped defaults (basis='landed', uplift=0) this equals aluminium_per_kg, so
- * the baseline is preserved.
+ * Effective aluminium rate per kg. When basis <> 'landed', apply the freight/
+ * handling uplift plus import duty; otherwise (default 'landed') use the rate
+ * as-is. With the shipped defaults (basis='landed', uplift=0, duty=0) this
+ * equals aluminium_per_kg, so the baseline is preserved.
  */
 export function aluminiumEffectivePerKg(rc: RateCardInput): number {
   const base = Number(rc.aluminium_per_kg) || 0;
-  if (rc.aluminium_basis === "stockist") {
-    return base * (1 + (Number(rc.freight_handling_pct) || 0) / 100);
+  if (rc.aluminium_basis && rc.aluminium_basis !== "landed") {
+    const uplift = (Number(rc.freight_handling_pct) || 0) + (Number(rc.import_duty_pct) || 0);
+    return base * (1 + uplift / 100);
   }
   return base;
 }
@@ -211,6 +214,58 @@ export function computeRate(
     optimized_wastage_pct,
     scrap_credit_amount: cutOpt?.enabled ? scrap_credit_amount : undefined,
   };
+}
+
+// ---- A1: parametric assembly scaling ----
+
+export interface AssemblyParams {
+  apply_powder_coating: boolean;
+  labour_per_sqm: number; freight_per_sqm: number;
+  wastage_pct: number; design_pct: number; misc_pct: number; pmc_pct: number; oh_profit_pct: number;
+}
+export interface AssemblyMemberInput {
+  orientation: "horizontal" | "vertical" | "fixed" | string;
+  base_cutlength_m: number; number: number; qty: number; unit_weight_kg_per_m: number;
+  section_key?: string; member_name?: string;
+}
+export interface AssemblyMaterialInput {
+  qty_per_unit: number; rate: number; is_infill: boolean;
+}
+
+/**
+ * Compute the rate/sqm + breakdown for an assembly instantiated at width W mm,
+ * height H mm, count N — by scaling members/materials geometrically and running
+ * the EXISTING rate formula with the assembly's own parameters.
+ */
+export function computeAssemblyRate(
+  params: AssemblyParams,
+  members: AssemblyMemberInput[],
+  materials: AssemblyMaterialInput[],
+  rateCard: RateCardInput,
+  W: number, H: number, N: number,
+  cutOpt?: CutOptInput
+): RateBreakdown {
+  const wM = W / 1000, hM = H / 1000;
+  const areaPer = wM * hM;
+  const area = areaPer * Math.max(1, N);
+
+  const memberInputs: MemberInput[] = members.map((m) => {
+    const length = m.orientation === "horizontal" ? wM : m.orientation === "vertical" ? hM : m.base_cutlength_m;
+    return {
+      member_name: m.member_name, cutlength_m: length, number: m.number,
+      qty: m.qty * Math.max(1, N), unit_weight_kg_per_m: m.unit_weight_kg_per_m, section_key: m.section_key,
+    };
+  });
+
+  const materialInputs: MaterialInput[] = materials.map((m) => ({
+    qty: m.is_infill ? areaPer * Math.max(1, N) : m.qty_per_unit * Math.max(1, N),
+    rate: m.rate, is_infill: m.is_infill,
+  }));
+
+  return computeRate(
+    { panel_area_sqm: area, ...params },
+    memberInputs, materialInputs, rateCard, cutOpt
+  );
 }
 
 function optimizeCutsForMembers(members: MemberInput[], bar: import("@/lib/cutOptimize").BarParams) {

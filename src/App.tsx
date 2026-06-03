@@ -12,6 +12,7 @@ const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const RateCalculator = lazy(() => import("@/pages/RateCalculator"));
 const SystemDetail = lazy(() => import("@/pages/SystemDetail"));
 const Masters = lazy(() => import("@/pages/Masters"));
+const Assemblies = lazy(() => import("@/pages/Assemblies"));
 const Verification = lazy(() => import("@/pages/Verification"));
 const Projects = lazy(() => import("@/pages/Projects"));
 const ProjectDetail = lazy(() => import("@/pages/ProjectDetail"));
@@ -42,6 +43,7 @@ export default function App() {
                 <Route path="/projects/:id" element={<ProtectedRoute><ProjectDetail /></ProtectedRoute>} />
                 <Route path="/quotations/:id" element={<ProtectedRoute><QuotationDetail /></ProtectedRoute>} />
                 <Route path="/masters" element={<ProtectedRoute><Masters /></ProtectedRoute>} />
+                <Route path="/assemblies" element={<ProtectedRoute><Assemblies /></ProtectedRoute>} />
                 <Route path="/verification" element={<ProtectedRoute><Verification /></ProtectedRoute>} />
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />

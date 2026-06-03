@@ -15,10 +15,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   fetchSystem, fetchSystemMembers, fetchSystemMaterials, fetchMaterials, fetchSections,
   fetchActiveRateCard, updateSystemParams, replaceMembers, replaceSystemMaterials, saveSnapshot,
-  fetchCalcConfig, type MemberDraft, type MaterialDraft,
+  fetchCalcConfig, fetchInfillPieces, replaceInfillPieces, fetchCompatibilityRules,
+  type MemberDraft, type MaterialDraft,
 } from "@/lib/facadeApi";
 import { computeRate, resolveMember, resolveMaterial, formatINR, sealantTubes } from "@/lib/rateEngine";
-import { validateSystem, DEFAULT_CALC_CONFIG } from "@/lib/guardrails";
+import { nestSheets } from "@/lib/sheetNest";
+import { validateSystem, checkCompatibility, DEFAULT_CALC_CONFIG } from "@/lib/guardrails";
 import { logAudit } from "@/lib/audit";
 
 const numField = (v: number | null | undefined) => (v == null ? "" : String(v));
@@ -37,6 +39,10 @@ export default function SystemDetail() {
   const secQ = useQuery({ queryKey: ["sections"], queryFn: fetchSections });
   const rcQ = useQuery({ queryKey: ["activeRateCard"], queryFn: fetchActiveRateCard });
   const cfgQ = useQuery({ queryKey: ["calcConfig"], queryFn: fetchCalcConfig });
+  const piecesQ = useQuery({ queryKey: ["infillPieces", id], queryFn: () => fetchInfillPieces(id), enabled: !!id });
+  const compatQ = useQuery({ queryKey: ["compatRules"], queryFn: fetchCompatibilityRules });
+  const [pieces, setPieces] = useState<any[]>([]);
+  useEffect(() => { if (piecesQ.data) setPieces(piecesQ.data.map((p) => ({ ...p }))); }, [piecesQ.data]);
 
   // editable local state
   const [params, setParams] = useState<any>(null);
@@ -71,8 +77,28 @@ export default function SystemDetail() {
     if (!params || !rcQ.data) return null;
     const memberInputs = members.map((m) =>
       resolveMember(m as any, m.section_id ? sectionById[m.section_id]?.default_unit_weight_kg_per_m : null));
-    const materialInputs = materials.map((m) =>
-      resolveMaterial(m as any, m.material_id ? materialById[m.material_id]?.default_rate : null));
+    // A2: sheet nesting — purchased sheet area per infill material (when toggle ON)
+    const sheetAreaByMat: Record<string, number> = {};
+    if (params.use_sheet_optimization) {
+      const byMat: Record<string, any[]> = {};
+      for (const p of pieces) if (p.material_id) (byMat[p.material_id] ??= []).push(p);
+      for (const [mid, ps] of Object.entries(byMat)) {
+        const cat = materialById[mid];
+        if (!cat?.sheet_width_mm || !cat?.sheet_height_mm) continue;
+        const r = nestSheets(
+          ps.map((p) => ({ width_mm: Number(p.width_mm) || 0, height_mm: Number(p.height_mm) || 0, count: Math.round(Number(p.count) || 0), allow_rotation: p.allow_rotation !== false })),
+          { sheet_width_mm: Number(cat.sheet_width_mm), sheet_height_mm: Number(cat.sheet_height_mm), sheet_edge_trim_mm: Number(cat.sheet_edge_trim_mm) || 0 }
+        );
+        sheetAreaByMat[mid] = r.sheet_area_sqm;
+      }
+    }
+    const materialInputs = materials.map((m) => {
+      const base = resolveMaterial(m as any, m.material_id ? materialById[m.material_id]?.default_rate : null);
+      if (params.use_sheet_optimization && m.is_infill && m.material_id && sheetAreaByMat[m.material_id] != null) {
+        return { ...base, qty: sheetAreaByMat[m.material_id] }; // pay for whole sheets
+      }
+      return base;
+    });
     const rc = rcQ.data;
     const cutOpt = params.use_cut_optimization
       ? {
@@ -101,19 +127,24 @@ export default function SystemDetail() {
       },
       memberInputs, materialInputs, rcQ.data, cutOpt
     );
-  }, [params, members, materials, rcQ.data, sectionById, materialById]);
+  }, [params, members, materials, rcQ.data, sectionById, materialById, pieces]);
 
   const guards = useMemo(() => {
     if (!params) return [];
-    return validateSystem(
+    const base = validateSystem(
       {
         oh_profit_pct: toNum(params.oh_profit_pct), wastage_pct: toNum(params.wastage_pct),
         labour_per_sqm: toNum(params.labour_per_sqm), freight_per_sqm: toNum(params.freight_per_sqm),
       },
       rcQ.data ?? null,
-      cfgQ.data ?? DEFAULT_CALC_CONFIG
+      cfgQ.data ?? DEFAULT_CALC_CONFIG,
+      breakdown?.cut_optimized ? breakdown.optimized_wastage_pct : undefined
     );
-  }, [params, rcQ.data, cfgQ.data]);
+    const secIds = new Set(members.map((m) => m.section_id).filter(Boolean) as string[]);
+    const matIds = new Set(materials.map((m) => m.material_id).filter(Boolean) as string[]);
+    const compat = checkCompatibility(secIds, matIds, (compatQ.data ?? []).map((r) => ({ section_id: r.section_id, material_id: r.material_id, message: r.message, is_active: r.is_active })));
+    return [...base, ...compat];
+  }, [params, rcQ.data, cfgQ.data, members, materials, compatQ.data, breakdown]);
 
   if (sysQ.isLoading || !params) {
     return <Layout><div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div></Layout>;
@@ -154,6 +185,10 @@ export default function SystemDetail() {
         structural_bite_mm: (m.structural_bite_mm as any) === "" || m.structural_bite_mm == null ? null : Number(m.structural_bite_mm),
         glueline_mm: (m.glueline_mm as any) === "" || m.glueline_mm == null ? null : Number(m.glueline_mm),
         tube_volume_ml: (m.tube_volume_ml as any) === "" || m.tube_volume_ml == null ? null : Number(m.tube_volume_ml),
+      })));
+      await replaceInfillPieces(id, pieces.map((p) => ({
+        material_id: p.material_id ?? null, width_mm: toNum(p.width_mm as any), height_mm: toNum(p.height_mm as any),
+        count: Math.round(toNum(p.count as any)), allow_rotation: p.allow_rotation !== false,
       })));
       await logAudit("system", id, "update", user?.id ?? null, { code: params.code });
       await qc.invalidateQueries({ queryKey: ["members", id] });
@@ -254,6 +289,14 @@ export default function SystemDetail() {
                     </div>
                   </div>
                 )}
+                <div className="space-y-1 flex flex-col justify-end">
+                  <Label className="text-xs">Sheet nesting</Label>
+                  <div className="h-9 flex items-center gap-2">
+                    <Switch checked={!!params.use_sheet_optimization} disabled={ro}
+                      onCheckedChange={(v) => setP("use_sheet_optimization", v)} />
+                    <span className="text-[10px] text-muted-foreground">{params.use_sheet_optimization ? "2D nest infill" : "flat area"}</span>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
@@ -346,6 +389,52 @@ export default function SystemDetail() {
                 })}
               </CardContent>
             </Card>
+
+            {/* A2: sheet nesting pieces (shown when sheet optimization is ON) */}
+            {params.use_sheet_optimization && (
+              <Card>
+                <CardHeader className="pb-3 flex-row items-center justify-between">
+                  <CardTitle className="text-sm">Infill pieces (2D sheet nesting)</CardTitle>
+                  {!ro && <Button size="sm" variant="outline" onClick={() => setPieces((a) => [...a, { material_id: (catQ.data ?? []).find((c) => c.is_infill)?.id ?? null, width_mm: 0, height_mm: 0, count: 1, allow_rotation: true }])}><Plus className="h-3.5 w-3.5 mr-1" />Add piece</Button>}
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p className="text-[11px] text-muted-foreground">Enter individual ACP/glass piece sizes. When ON, infill cost = whole sheets purchased (heuristic estimate, not a cut-plan). Materials need sheet dimensions set in Masters.</p>
+                  <div className="grid grid-cols-[1fr_70px_70px_50px_28px] gap-2 text-[10px] uppercase text-muted-foreground px-1"><span>Material</span><span>W mm</span><span>H mm</span><span>Count</span><span /></div>
+                  {pieces.map((p, i) => (
+                    <div key={i} className="grid grid-cols-[1fr_70px_70px_50px_28px] gap-2 items-center">
+                      <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" disabled={ro} value={p.material_id ?? ""} onChange={(e) => setPieces((a) => a.map((x, j) => j === i ? { ...x, material_id: e.target.value } : x))}>
+                        {(catQ.data ?? []).filter((c) => c.is_infill).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                      <Input className="h-8" type="number" step="any" disabled={ro} value={numField(p.width_mm)} onChange={(e) => setPieces((a) => a.map((x, j) => j === i ? { ...x, width_mm: e.target.value } : x))} />
+                      <Input className="h-8" type="number" step="any" disabled={ro} value={numField(p.height_mm)} onChange={(e) => setPieces((a) => a.map((x, j) => j === i ? { ...x, height_mm: e.target.value } : x))} />
+                      <Input className="h-8" type="number" step="any" disabled={ro} value={numField(p.count)} onChange={(e) => setPieces((a) => a.map((x, j) => j === i ? { ...x, count: e.target.value } : x))} />
+                      {!ro && <Button size="icon" variant="ghost" className="h-8 w-7" onClick={() => setPieces((a) => a.filter((_, j) => j !== i))}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>}
+                    </div>
+                  ))}
+                  {pieces.length === 0 && <p className="text-xs text-muted-foreground px-1">No pieces yet.</p>}
+                  {/* per-material nest summary */}
+                  {(() => {
+                    const byMat: Record<string, any[]> = {};
+                    for (const p of pieces) if (p.material_id) (byMat[p.material_id] ??= []).push(p);
+                    const rows = Object.entries(byMat).map(([mid, ps]) => {
+                      const cat = materialById[mid];
+                      if (!cat?.sheet_width_mm || !cat?.sheet_height_mm) return { name: cat?.name ?? "?", err: "no sheet dims (set in Masters)" };
+                      const r = nestSheets(ps.map((p) => ({ width_mm: Number(p.width_mm) || 0, height_mm: Number(p.height_mm) || 0, count: Math.round(Number(p.count) || 0), allow_rotation: p.allow_rotation !== false })), { sheet_width_mm: Number(cat.sheet_width_mm), sheet_height_mm: Number(cat.sheet_height_mm), sheet_edge_trim_mm: Number(cat.sheet_edge_trim_mm) || 0 });
+                      return { name: cat.name, r };
+                    });
+                    return rows.length ? (
+                      <div className="border-t pt-2 space-y-0.5">
+                        {rows.map((x, k) => (
+                          <p key={k} className="text-[11px] text-muted-foreground">
+                            <b>{x.name}</b>: {x.err ? <span className="text-amber-600">{x.err}</span> : <>{x.r!.sheets_used} sheets · {x.r!.sheet_wastage_pct.toFixed(1)}% wastage · purchased {x.r!.sheet_area_sqm.toFixed(2)} sqm{x.r!.oversized ? " ⚠ oversized piece" : ""}</>}
+                          </p>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Right: live build-up */}

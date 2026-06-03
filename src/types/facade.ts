@@ -29,6 +29,24 @@ export interface Material {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // A2 sheet dims (for 2D nesting)
+  sheet_width_mm?: number | null;
+  sheet_height_mm?: number | null;
+  sheet_edge_trim_mm?: number | null;
+}
+
+export interface InfillPiece {
+  id: string;
+  system_id: string | null;
+  assembly_id: string | null;
+  estimate_line_id: string | null;
+  material_id: string | null;
+  width_mm: number;
+  height_mm: number;
+  count: number;
+  allow_rotation: boolean;
+  sort_order: number;
+  source: string;
 }
 
 export interface RateCard {
@@ -52,6 +70,18 @@ export interface RateCard {
   bar_trim_mm: number;
   min_usable_offcut_mm: number;
   scrap_recovery_pct: number;
+  // supplementary A4/A3
+  import_duty_pct: number;
+  price_source: string;
+}
+
+export interface PriceFeedLog {
+  id: string;
+  metal: string;
+  index_name: string | null;
+  value_per_kg_inr: number | null;
+  fetched_at: string;
+  source_note: string | null;
 }
 
 export interface CalcConfigRow {
@@ -86,6 +116,8 @@ export interface FacadeSystem {
   // v1.2 toggles
   use_cut_optimization: boolean;
   apply_scrap_credit: boolean;
+  // A2 toggle
+  use_sheet_optimization: boolean;
 }
 
 export interface SystemMember {
@@ -206,9 +238,59 @@ export interface EstimateLine {
   amount: number; // generated (area_sqm * rate_per_sqm)
   notes: string | null;
   sort_order: number;
-  area_source: string; // manual|ai
+  area_source: string; // manual|ai|ai_extracted|ai_override
   ai_confidence: number | null;
   ai_confidence_reason: string | null;
+  // A1 assembly instantiation
+  assembly_id: string | null;
+  inst_width_mm: number | null;
+  inst_height_mm: number | null;
+  inst_count: number | null;
+}
+
+export interface Assembly {
+  id: string;
+  code: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  base_width_mm: number;
+  base_height_mm: number;
+  apply_powder_coating: boolean;
+  labour_per_sqm: number;
+  freight_per_sqm: number;
+  wastage_pct: number;
+  design_pct: number;
+  misc_pct: number;
+  pmc_pct: number;
+  oh_profit_pct: number;
+  is_active: boolean;
+  use_sheet_optimization?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssemblyMember {
+  id: string;
+  assembly_id: string;
+  section_id: string | null;
+  member_name: string;
+  orientation: "horizontal" | "vertical" | "fixed" | string;
+  base_cutlength_m: number;
+  number: number;
+  qty: number;
+  unit_weight_kg_per_m: number | null;
+  sort_order: number;
+}
+
+export interface AssemblyMaterial {
+  id: string;
+  assembly_id: string;
+  material_id: string | null;
+  qty_per_unit: number;
+  is_infill: boolean;
+  wastage_applies: boolean;
+  sort_order: number;
 }
 
 export interface Quotation {
@@ -286,6 +368,54 @@ export interface BomLine {
   description: string;
   qty: number;
   unit: string;
+}
+
+export interface AiConfigRow {
+  id: string;
+  feature: string;
+  enabled: boolean;
+  confidence_threshold: number;
+  provider: string;
+  notes: string | null;
+  updated_at: string;
+}
+
+export interface TenderScopeItem {
+  id: string;
+  project_id: string | null;
+  document_id: string | null;
+  description: string | null;
+  system_guess: string | null;
+  area_sqm: number | null;
+  spec_notes: string | null;
+  confidence: number | null;
+  flagged: boolean;
+  status: string;
+  created_at: string;
+}
+
+export interface MaterialPriceProposal {
+  id: string;
+  material_id: string | null;
+  proposed_rate: number | null;
+  current_rate: number | null;
+  source_doc: string | null;
+  confidence: number | null;
+  status: string;
+  decided_by: string | null;
+  created_at: string;
+}
+
+export interface CompatibilityRule {
+  id: string;
+  rule_type: string;
+  section_id: string | null;
+  material_id: string | null;
+  min_value: number | null;
+  max_value: number | null;
+  severity: string;
+  message: string | null;
+  is_active: boolean;
 }
 
 export type { RateBreakdown };
