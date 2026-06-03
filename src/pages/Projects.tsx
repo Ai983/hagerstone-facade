@@ -34,12 +34,12 @@ export default function Projects() {
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (!form.client_name || !form.project_name) { toast.error("Client and project name required"); return; }
+    if (!form.client_name || !form.project_name) { toast.error("Client aur project ka naam zaroori hai"); return; }
     setBusy(true);
     try {
       const p = await createProject({ ...form, created_by: user?.id ?? null });
       await logAudit("project", p.id, "create", user?.id ?? null, { code: p.code });
-      toast.success(`Created ${p.code}`);
+      toast.success(`${p.code} ban gaya`);
       setOpen(false); setForm({ client_name: "", project_name: "", location: "", site_address: "" });
       qc.invalidateQueries({ queryKey: ["projects"] });
       navigate(`/projects/${p.id}`);
@@ -51,22 +51,22 @@ export default function Projects() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2"><FolderKanban className="h-6 w-6 text-primary" /> Projects</h1>
-            <p className="text-muted-foreground text-sm mt-1">Enquiry → estimate → quotation → execution.</p>
+            <h1 className="text-2xl font-bold flex items-center gap-2"><FolderKanban className="h-6 w-6 text-primary" /> Projects (Kaam)</h1>
+            <p className="text-muted-foreground text-sm mt-1">Poochh-taachh → estimate → quotation → kaam.</p>
           </div>
           {canCreate && (
             <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />New project</Button></DialogTrigger>
+              <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" />Naya Project</Button></DialogTrigger>
               <DialogContent>
-                <DialogHeader><DialogTitle>New project</DialogTitle></DialogHeader>
+                <DialogHeader><DialogTitle>Naya Project banayein</DialogTitle></DialogHeader>
                 <div className="space-y-3">
-                  <div className="space-y-1"><Label>Client name *</Label><Input value={form.client_name} onChange={(e) => setForm({ ...form, client_name: e.target.value })} /></div>
-                  <div className="space-y-1"><Label>Project name *</Label><Input value={form.project_name} onChange={(e) => setForm({ ...form, project_name: e.target.value })} /></div>
-                  <div className="space-y-1"><Label>Location</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
-                  <div className="space-y-1"><Label>Site address</Label><Input value={form.site_address} onChange={(e) => setForm({ ...form, site_address: e.target.value })} /></div>
+                  <div className="space-y-1"><Label>Client ka naam *</Label><Input value={form.client_name} onChange={(e) => setForm({ ...form, client_name: e.target.value })} /></div>
+                  <div className="space-y-1"><Label>Project ka naam *</Label><Input value={form.project_name} onChange={(e) => setForm({ ...form, project_name: e.target.value })} /></div>
+                  <div className="space-y-1"><Label>Jagah (Location)</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
+                  <div className="space-y-1"><Label>Site ka pata</Label><Input value={form.site_address} onChange={(e) => setForm({ ...form, site_address: e.target.value })} /></div>
                 </div>
                 <DialogFooter>
-                  <Button onClick={submit} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}</Button>
+                  <Button onClick={submit} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Banayein"}</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -93,7 +93,7 @@ export default function Projects() {
               </CardContent>
             </Card>
           ))}
-          {projects && projects.length === 0 && <p className="text-sm text-muted-foreground">No projects yet.</p>}
+          {projects && projects.length === 0 && <p className="text-sm text-muted-foreground">Abhi koi project nahi hai. "Naya Project" par click karein.</p>}
         </div>
       </div>
     </Layout>

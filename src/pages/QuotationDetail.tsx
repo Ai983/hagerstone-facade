@@ -24,7 +24,7 @@ import { validateSystem } from "@/lib/guardrails";
 const QUOTE_STATUSES = ["draft", "sent", "approved", "rejected", "expired"];
 
 const DEFAULT_TERMS =
-  "1. Prices are exclusive of GST.\n2. 50% advance along with the work order; balance against delivery.\n3. Delivery: 4-6 weeks from approval of drawings & advance.\n4. Quotation valid for 30 days.\n5. Any scope change will be charged extra.";
+  "1. Rate me GST alag se lagega.\n2. Work order ke saath 50% advance; baaki delivery par.\n3. Delivery: drawing approval aur advance ke 4-6 hafte baad.\n4. Quotation 30 din tak valid.\n5. Kaam me badlaav par extra charge lagega.";
 
 export default function QuotationDetail() {
   const { id = "" } = useParams();
@@ -100,13 +100,13 @@ export default function QuotationDetail() {
         await updateProjectStatus(qQ.data.project_id, "approved");
         if (seeded) {
           await logAudit("project", qQ.data.project_id, "stages_seeded", user?.id ?? null, { quotation: qQ.data.code });
-          toast.success("Execution stages created");
+          toast.success("Kaam ke stages ban gaye");
         }
         qc.invalidateQueries({ queryKey: ["stages", qQ.data.project_id] });
         qc.invalidateQueries({ queryKey: ["project", qQ.data.project_id] });
       }
       setStatus(newStatus);
-      toast.success(nextStatus ? `Status → ${nextStatus}` : "Saved");
+      toast.success(nextStatus ? `Status → ${nextStatus}` : "Save ho gaya");
       qc.invalidateQueries({ queryKey: ["quotation", id] });
       qc.invalidateQueries({ queryKey: ["quotations", qQ.data?.project_id] });
     } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
@@ -143,13 +143,13 @@ export default function QuotationDetail() {
             </div>
             <p className="text-xs text-muted-foreground">{pQ.data?.client_name} · {pQ.data?.project_name}</p>
           </div>
-          <Button variant="outline" onClick={exportPdf}><Download className="h-4 w-4 mr-2" />Export PDF</Button>
+          <Button variant="outline" onClick={exportPdf}><Download className="h-4 w-4 mr-2" />PDF nikalein</Button>
         </div>
 
         {guards.length > 0 && (
           <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-1">
             <p className="text-sm font-medium text-amber-700 dark:text-amber-400 flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4" /> {guards.length} pricing warning{guards.length > 1 ? "s" : ""} — review before sending
+              <AlertTriangle className="h-4 w-4" /> {guards.length} price warning — bhejne se pehle dekhein
             </p>
             <ul className="text-xs text-amber-700/90 dark:text-amber-400/90 list-disc pl-6">
               {guards.map((g, i) => <li key={i}><b className="font-mono">{g.system}</b> — {g.message}</li>)}
@@ -161,13 +161,13 @@ export default function QuotationDetail() {
           <div className="lg:col-span-2 space-y-6">
             {/* Lines */}
             <Card>
-              <CardHeader className="pb-3"><CardTitle className="text-sm">Lines</CardTitle></CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">Lines (items)</CardTitle></CardHeader>
               <CardContent>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-[10px] uppercase text-muted-foreground border-b">
-                      <th className="py-2">#</th><th className="py-2">Description</th>
-                      <th className="py-2 text-right">Area</th><th className="py-2 text-right">Rate/sqm</th><th className="py-2 text-right">Amount</th>
+                      <th className="py-2">#</th><th className="py-2">Vivaran</th>
+                      <th className="py-2 text-right">Area</th><th className="py-2 text-right">Rate/sqm</th><th className="py-2 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -185,14 +185,14 @@ export default function QuotationDetail() {
                 <Separator className="my-3" />
                 <div className="flex justify-end items-center gap-4">
                   <span className="text-sm text-muted-foreground">Total</span>
-                  <span className="text-xl font-bold text-primary tabular-nums">{formatINR(q.total_amount)}</span>
+                  <span className="text-xl font-bold text-primary tabular-nums">{formatINR(q.total_amount)}{/* */}</span>
                 </div>
               </CardContent>
             </Card>
 
             {/* Terms */}
             <Card>
-              <CardHeader className="pb-3"><CardTitle className="text-sm">Terms &amp; conditions</CardTitle></CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">Terms &amp; conditions (shartein)</CardTitle></CardHeader>
               <CardContent>
                 <Textarea rows={6} disabled={ro} value={terms} onChange={(e) => setTerms(e.target.value)} />
               </CardContent>
@@ -202,20 +202,20 @@ export default function QuotationDetail() {
           {/* Client fields + status */}
           <div className="space-y-4">
             <Card>
-              <CardHeader className="pb-3"><CardTitle className="text-sm">Client terms</CardTitle></CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">Client ki shartein</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">Quote valid until</Label>
+                  <Label className="text-xs">Quotation kab tak valid</Label>
                   <Input type="date" disabled={ro} value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Price valid until</Label>
+                  <Label className="text-xs">Price kab tak valid</Label>
                   <Input type="date" disabled={ro} value={priceValidUntil} onChange={(e) => setPriceValidUntil(e.target.value)} />
-                  <p className="text-[10px] text-muted-foreground">Prefilled from the rate card.</p>
+                  <p className="text-[10px] text-muted-foreground">Rate card se apne aap bhara.</p>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Price escalation clause</Label>
-                  <Textarea rows={3} disabled={ro} value={escalationClause} placeholder="e.g. Prices firm until the date above; thereafter subject to LME aluminium movement." onChange={(e) => setEscalationClause(e.target.value)} />
+                  <Label className="text-xs">Price badhne ki shart (escalation)</Label>
+                  <Textarea rows={3} disabled={ro} value={escalationClause} placeholder="jaise: Upar di date tak rate pakka; uske baad aluminium (LME) ke hisaab se badlega." onChange={(e) => setEscalationClause(e.target.value)} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Status</Label>
@@ -226,13 +226,13 @@ export default function QuotationDetail() {
                 </div>
                 {!ro && (
                   <Button className="w-full" onClick={() => save()} disabled={busy}>
-                    {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}Save
+                    {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}Save karein
                   </Button>
                 )}
                 {canApprove && (
                   <div className="flex gap-2 pt-1">
-                    <Button variant="outline" className="flex-1" onClick={() => save("approved")} disabled={busy}>Approve</Button>
-                    <Button variant="outline" className="flex-1" onClick={() => save("rejected")} disabled={busy}>Reject</Button>
+                    <Button variant="outline" className="flex-1" onClick={() => save("approved")} disabled={busy}>Manzoor</Button>
+                    <Button variant="outline" className="flex-1" onClick={() => save("rejected")} disabled={busy}>Mana</Button>
                   </div>
                 )}
               </CardContent>

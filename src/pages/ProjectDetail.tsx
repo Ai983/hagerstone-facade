@@ -119,7 +119,7 @@ export default function ProjectDetail() {
         repriced.map((l) => ({ system_id: l.system_id, elevation_ref: l.elevation_ref || null, area_sqm: Number(l.area_sqm) || 0, rate_per_sqm: Number(l.rate_per_sqm) || 0, notes: l.notes || null, area_source: l.area_source, ai_confidence: l.ai_confidence, ai_confidence_reason: l.ai_confidence_reason })),
         user?.id ?? null, `Re-priced with tier ${selectedTier.name} (${selectedTier.markup_pct}%)`);
       await logAudit("estimate", selEst, "reprice_tier", user?.id ?? null, { tier: selectedTier.name });
-      toast.success(`Re-priced with ${selectedTier.name} markup`);
+      toast.success(`${selectedTier.name} markup se rate badal gaye`);
       qc.invalidateQueries({ queryKey: ["estimateLines", selEst] });
       qc.invalidateQueries({ queryKey: ["estimates", id] });
     } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
@@ -141,7 +141,7 @@ export default function ProjectDetail() {
       const est = await createEstimate(id, user?.id ?? null);
       await logAudit("estimate", est.id, "create", user?.id ?? null, { code: est.code, version: est.version });
       if (projQ.data?.status === "enquiry") await updateProjectStatus(id, "estimating");
-      toast.success(`Created ${est.code} (v${est.version})`);
+      toast.success(`${est.code} (v${est.version}) ban gaya`);
       await qc.invalidateQueries({ queryKey: ["estimates", id] });
       await qc.invalidateQueries({ queryKey: ["project", id] });
       setSelEst(est.id);
@@ -154,7 +154,7 @@ export default function ProjectDetail() {
     try {
       const est = await reviseEstimate(id, selEst, user?.id ?? null);
       await logAudit("estimate", est.id, "revise", user?.id ?? null, { code: est.code, version: est.version, from: selectedEstimate?.code });
-      toast.success(`Revised → ${est.code} (v${est.version})`);
+      toast.success(`Naya version → ${est.code} (v${est.version})`);
       await qc.invalidateQueries({ queryKey: ["estimates", id] });
       setSelEst(est.id);
     } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
@@ -170,7 +170,7 @@ export default function ProjectDetail() {
         area_source: l.area_source, ai_confidence: l.ai_confidence, ai_confidence_reason: l.ai_confidence_reason,
       })), user?.id ?? null, "Lines saved");
       await logAudit("estimate", selEst, "update_lines", user?.id ?? null, { lines: lines.length, total: t });
-      toast.success(`Saved · total ${formatINR(t)}`);
+      toast.success(`Save ho gaya · total ${formatINR(t)}`);
       await qc.invalidateQueries({ queryKey: ["estimateLines", selEst] });
       await qc.invalidateQueries({ queryKey: ["estimates", id] });
     } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
@@ -189,17 +189,17 @@ export default function ProjectDetail() {
 
   const addFromAssembly = async () => {
     const W = Number(asmForm.w), H = Number(asmForm.h), N = Math.max(1, Math.round(Number(asmForm.count) || 1));
-    if (!asmForm.assembly_id || W <= 0 || H <= 0) { toast.error("Pick an assembly and enter W×H"); return; }
+    if (!asmForm.assembly_id || W <= 0 || H <= 0) { toast.error("Set chunein aur W×H daalein"); return; }
     try {
       const r = await computeAssemblyCurrentRate(asmForm.assembly_id, W, H, N);
-      if (!r) { toast.error("No active rate card"); return; }
+      if (!r) { toast.error("Koi active rate card nahi"); return; }
       setLines((a) => [...a, {
         system_id: null, elevation_ref: asmForm.elevation_ref || null, area_sqm: Number(r.area.toFixed(4)),
         rate_per_sqm: Number(r.rate_per_sqm.toFixed(4)), notes: null, area_source: "manual",
         assembly_id: asmForm.assembly_id, inst_width_mm: W, inst_height_mm: H, inst_count: N,
       }]);
       setAsmDlg(false); setAsmForm({ assembly_id: "", w: "", h: "", count: "1", elevation_ref: "" });
-      toast.success("Assembly line added — Save to persist");
+      toast.success("Set ki line jud gayi — Save karein");
     } catch (e: any) { toast.error(e.message); }
   };
   const asmById = useMemo(() => Object.fromEntries((asmQ.data ?? []).map((x) => [x.id, x])), [asmQ.data]);
@@ -217,14 +217,14 @@ export default function ProjectDetail() {
       const res = await reviewEstimate(payload);
       await createEstimateReview(selEst, res.findings, res.risk_summary);
       await logAiRun({ feature: "review", input_ref: selEst, output: res, confidence: 0, confidence_reason: "advisory review", accepted: false, actor_id: user?.id ?? null });
-      toast.success(`Review complete · ${res.findings.length} finding(s)`);
+      toast.success(`Jaanch poori · ${res.findings.length} baat mili`);
       qc.invalidateQueries({ queryKey: ["estimateReviews", selEst] });
     } catch (e: any) { toast.error(`Review failed: ${e.message ?? e}`); } finally { setReviewing(false); }
   };
 
   // AI-5: natural-language draft → estimate lines
   const runNlDraft = async () => {
-    if (!nlBrief.trim()) { toast.error("Describe the scope first"); return; }
+    if (!nlBrief.trim()) { toast.error("Pehle kaam likhein"); return; }
     setBusy(true);
     try {
       const codes = (sysQ.data ?? []).map((s) => s.code);
@@ -237,7 +237,7 @@ export default function ProjectDetail() {
         if (sys) { try { const r = await computeSystemCurrentRate(sys.id, { ohOverride: l.oh_profit_pct ?? null }); if (r) rate = Number(r.rate_per_sqm.toFixed(4)); } catch { /* */ } }
         newLines.push({ system_id: sys?.id ?? null, elevation_ref: null, area_sqm: l.area_sqm, rate_per_sqm: rate, notes: l.notes, area_source: "ai_extracted", ai_confidence: l.confidence, ai_confidence_reason: nlBrief.slice(0, 120) });
       }
-      if (!newLines.length) { toast.error("Couldn't map the brief to systems"); return; }
+      if (!newLines.length) { toast.error("Likhe se system match nahi hua"); return; }
       setLines((a) => [...a, ...newLines]);
       await logAiRun({ feature: "nl_draft", input_ref: selEst, output: res, confidence: res.confidence, confidence_reason: res.confidence_reason, accepted: true, actor_id: user?.id ?? null });
       setNlDlg(false); setNlBrief("");
@@ -250,7 +250,7 @@ export default function ProjectDetail() {
     if (!sysQ.data?.length) return;
     setAiBusy(true);
     try {
-      toast.info("Analysing elevation… this can take ~20s");
+      toast.info("Drawing padh raha hoon… ~20 second lagega");
       const b64 = await fileToBase64(file);
       const result = await runElevationTakeoff(b64, sysQ.data.map((s) => ({ code: s.code, name: s.name, category: s.category })));
       logAiRun({ feature: "takeoff", input_ref: id, output: result, confidence: result.overall_confidence, confidence_reason: "elevation take-off", accepted: false, actor_id: user?.id ?? null });
@@ -270,10 +270,10 @@ export default function ProjectDetail() {
           ai_confidence: tl.confidence, ai_confidence_reason: tl.confidence_reason,
         });
       }
-      if (!newLines.length) { toast.error("No systems recognised in the drawing"); return; }
+      if (!newLines.length) { toast.error("Drawing me koi system nahi mila"); return; }
       setLines((a) => [...a, ...newLines]);
-      if (manual > 0) toast.warning(`${auto} auto-filled, ${manual} low-confidence — review highlighted lines, then Save`);
-      else toast.success(`${auto} lines auto-filled from elevation. Review & Save.`);
+      if (manual > 0) toast.warning(`${auto} apne aap bhare, ${manual} me bharosa kam — peeli lines dekhein, phir Save`);
+      else toast.success(`${auto} lines apne aap bhar gayi. Dekh kar Save karein.`);
     } catch (e: any) {
       toast.error(`AI take-off failed: ${e.message ?? e}`);
     } finally { setAiBusy(false); if (fileInputRef.current) fileInputRef.current.value = ""; }
@@ -286,7 +286,7 @@ export default function ProjectDetail() {
       const q = await createQuotationFromEstimate(id, selEst, user?.id ?? null);
       await logAudit("quotation", q.id, "create", user?.id ?? null, { code: q.code, from_estimate: selectedEstimate?.code });
       if (["enquiry", "estimating"].includes(projQ.data?.status ?? "")) await updateProjectStatus(id, "quoted");
-      toast.success(`Generated ${q.code}`);
+      toast.success(`${q.code} ban gaya`);
       await qc.invalidateQueries({ queryKey: ["quotations", id] });
       await qc.invalidateQueries({ queryKey: ["project", id] });
       navigate(`/quotations/${q.id}`);
@@ -311,18 +311,18 @@ export default function ProjectDetail() {
   const reopenStage = (s: any) => changeStage(s.id, { status: "in_progress", completed_at: null }, "reopen");
 
   const exportToCps = async () => {
-    if (!selEst || !selectedEstimate || !projQ.data) { toast.error("Select an estimate first"); return; }
+    if (!selEst || !selectedEstimate || !projQ.data) { toast.error("Pehle ek estimate chunein"); return; }
     setBusy(true);
     try {
       const bom = await buildProcurementBom(selEst);
-      if (!bom.length) { toast.error("No materials to procure (estimate has no system lines)"); return; }
+      if (!bom.length) { toast.error("Koi material nahi (estimate me system lines nahi)"); return; }
       const code = await nextRef("PR");
       const payload = buildCpsProcurementPayload(code, projQ.data, selectedEstimate, bom);
       const req = await createProcurementExport(code, projQ.data, bom, payload);
       downloadJson(payload, `${req.code}.json`);
       downloadCsv(payload.line_items.map((l) => ({ description: l.description, quantity: l.quantity, unit: l.unit, gst_percent: l.gst_percent })), `${req.code}-lines.csv`);
       await logAudit("procurement_request", req.id, "export_cps", user?.id ?? null, { code: req.code, lines: bom.length });
-      toast.success(`Exported ${req.code} (CPS) — ${bom.length} lines · cps schema untouched`);
+      toast.success(`${req.code} CPS ko bhej diya — ${bom.length} lines · cps ko haath nahi lagaya`);
       qc.invalidateQueries({ queryKey: ["procurement", id] });
     } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
   };
@@ -331,7 +331,7 @@ export default function ProjectDetail() {
     if (!projQ.data) return;
     const latestQuote = quotesQ.data?.[0];
     const amount = latestQuote?.total_amount ?? selectedEstimate?.total_amount ?? 0;
-    if (!amount) { toast.error("Need a quotation or estimate total to invoice"); return; }
+    if (!amount) { toast.error("Invoice ke liye quotation/estimate total chahiye"); return; }
     setBusy(true);
     try {
       const code = await nextRef("PAY");
@@ -344,7 +344,7 @@ export default function ProjectDetail() {
       downloadJson(payload, `${pay.code}.json`);
       downloadCsv([{ cps_po_ref: payload.cps_po_ref, supplier_name: payload.supplier_name, project_name: payload.project_name, total_amount: payload.total_amount, status: payload.status }], `${pay.code}.csv`);
       await logAudit("payment", pay.id, "export_finance", user?.id ?? null, { code: pay.code, amount });
-      toast.success(`Exported ${pay.code} (Finance) · finance schema untouched`);
+      toast.success(`${pay.code} Finance ko bhej diya · finance ko haath nahi lagaya`);
     } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
   };
 
@@ -376,11 +376,11 @@ export default function ProjectDetail() {
         {/* Estimates / versions */}
         <Card>
           <CardHeader className="pb-3 flex-row items-center justify-between">
-            <CardTitle className="text-sm flex items-center gap-2"><FileText className="h-4 w-4" /> Estimates</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2"><FileText className="h-4 w-4" /> Estimates (Hisaab)</CardTitle>
             {canCreate && (
               <div className="flex gap-2">
-                {selEst && <Button size="sm" variant="outline" onClick={handleRevise} disabled={busy}><Copy className="h-3.5 w-3.5 mr-1" />Revise (new version)</Button>}
-                <Button size="sm" onClick={handleNewEstimate} disabled={busy}><Plus className="h-3.5 w-3.5 mr-1" />New estimate</Button>
+                {selEst && <Button size="sm" variant="outline" onClick={handleRevise} disabled={busy}><Copy className="h-3.5 w-3.5 mr-1" />Naya version</Button>}
+                <Button size="sm" onClick={handleNewEstimate} disabled={busy}><Plus className="h-3.5 w-3.5 mr-1" />Naya Estimate</Button>
               </div>
             )}
           </CardHeader>
@@ -394,7 +394,7 @@ export default function ProjectDetail() {
                   </button>
                 ))}
               </div>
-            ) : <p className="text-sm text-muted-foreground">No estimates yet. {canCreate && "Create one to start."}</p>}
+            ) : <p className="text-sm text-muted-foreground">Abhi koi estimate nahi. {canCreate && "Naya Estimate banayein."}</p>}
           </CardContent>
         </Card>
 
@@ -411,31 +411,31 @@ export default function ProjectDetail() {
                   <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden"
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAiTakeoff(f); }} />
                   <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={aiBusy}
-                    title="Upload an elevation PDF — AI prefills per-system areas">
-                    {aiBusy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}AI take-off
+                    title="Elevation PDF daalein — AI khud area bhar dega">
+                    {aiBusy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}AI se area
                   </Button>
-                  <Button size="sm" variant="outline" onClick={addLine}><Plus className="h-3.5 w-3.5 mr-1" />Add line</Button>
+                  <Button size="sm" variant="outline" onClick={addLine}><Plus className="h-3.5 w-3.5 mr-1" />Line jodein</Button>
                   {aiCfg.nl_draft?.enabled && (
                     <Dialog open={nlDlg} onOpenChange={setNlDlg}>
-                      <DialogTrigger asChild><Button size="sm" variant="outline"><Wand2 className="h-3.5 w-3.5 mr-1" />AI draft</Button></DialogTrigger>
+                      <DialogTrigger asChild><Button size="sm" variant="outline"><Wand2 className="h-3.5 w-3.5 mr-1" />AI se likho</Button></DialogTrigger>
                       <DialogContent>
-                        <DialogHeader><DialogTitle>Draft estimate lines from a brief</DialogTitle></DialogHeader>
+                        <DialogHeader><DialogTitle>Likh kar estimate lines banayein</DialogTitle></DialogHeader>
                         <div className="space-y-2">
-                          <Textarea rows={3} value={nlBrief} placeholder="e.g. 400 sqm straight glazing 6+12+6 DGU at 18% margin; 40 sqm louvres" onChange={(e) => setNlBrief(e.target.value)} />
-                          <p className="text-[11px] text-muted-foreground">AI maps the brief to your systems and snapshots their rates. Review every line before saving — AI never sets a price.</p>
+                          <Textarea rows={3} value={nlBrief} placeholder="jaise: 400 sqm straight glazing 6+12+6 DGU 18% margin; 40 sqm louvres" onChange={(e) => setNlBrief(e.target.value)} />
+                          <p className="text-[11px] text-muted-foreground">AI aapke likhe se lines bana dega aur rate system se le lega. Save se pehle har line dekh lein — AI khud rate tay nahi karta.</p>
                         </div>
-                        <DialogFooter><Button onClick={runNlDraft} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Draft lines"}</Button></DialogFooter>
+                        <DialogFooter><Button onClick={runNlDraft} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Lines banayein"}</Button></DialogFooter>
                       </DialogContent>
                     </Dialog>
                   )}
                   <Dialog open={asmDlg} onOpenChange={setAsmDlg}>
-                    <DialogTrigger asChild><Button size="sm" variant="outline" disabled={!asmQ.data?.length}><Boxes className="h-3.5 w-3.5 mr-1" />From assembly</Button></DialogTrigger>
+                    <DialogTrigger asChild><Button size="sm" variant="outline" disabled={!asmQ.data?.length}><Boxes className="h-3.5 w-3.5 mr-1" />Ready Set se</Button></DialogTrigger>
                     <DialogContent>
-                      <DialogHeader><DialogTitle>Add line from assembly</DialogTitle></DialogHeader>
+                      <DialogHeader><DialogTitle>Ready Set se line jodein</DialogTitle></DialogHeader>
                       <div className="space-y-3">
-                        <div className="space-y-1"><Label>Assembly</Label>
+                        <div className="space-y-1"><Label>Ready Set</Label>
                           <select className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm" value={asmForm.assembly_id} onChange={(e) => { const x = asmById[e.target.value]; setAsmForm({ ...asmForm, assembly_id: e.target.value, w: x ? String(x.base_width_mm) : asmForm.w, h: x ? String(x.base_height_mm) : asmForm.h }); }}>
-                            <option value="">Pick…</option>
+                            <option value="">Chunein…</option>
                             {(asmQ.data ?? []).map((x) => <option key={x.id} value={x.id}>{x.code} · {x.name}</option>)}
                           </select>
                         </div>
@@ -446,11 +446,11 @@ export default function ProjectDetail() {
                           <div className="space-y-1"><Label>Elev.</Label><Input value={asmForm.elevation_ref} onChange={(e) => setAsmForm({ ...asmForm, elevation_ref: e.target.value })} /></div>
                         </div>
                       </div>
-                      <DialogFooter><Button onClick={addFromAssembly}>Add line</Button></DialogFooter>
+                      <DialogFooter><Button onClick={addFromAssembly}>Line jodein</Button></DialogFooter>
                     </DialogContent>
                   </Dialog>
-                  <Button size="sm" variant="outline" onClick={handleSaveLines} disabled={busy}>{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}Save</Button>
-                  <Button size="sm" onClick={handleGenerateQuote} disabled={busy || lines.length === 0}><FileSignature className="h-3.5 w-3.5 mr-1" />Generate quotation</Button>
+                  <Button size="sm" variant="outline" onClick={handleSaveLines} disabled={busy}>{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}Save karein</Button>
+                  <Button size="sm" onClick={handleGenerateQuote} disabled={busy || lines.length === 0}><FileSignature className="h-3.5 w-3.5 mr-1" />Quotation banayein</Button>
                 </div>
               )}
             </CardHeader>
@@ -459,22 +459,22 @@ export default function ProjectDetail() {
               {!ro && (
                 <div className="flex flex-wrap items-end gap-3 pb-2 border-b mb-2">
                   <div className="space-y-1">
-                    <label className="text-[10px] uppercase text-muted-foreground block">Markup tier</label>
+                    <label className="text-[10px] uppercase text-muted-foreground block">Markup tier (munafa)</label>
                     <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" value={selectedEstimate?.markup_tier_id ?? ""} onChange={(e) => setTier(e.target.value)}>
-                      <option value="">System default ({/* per-system OH */}OH&amp;P)</option>
+                      <option value="">System wala default (OH&amp;P)</option>
                       {(tiersQ.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.name} · {t.markup_pct}%{t.contingency_pct ? ` +${t.contingency_pct}% cont.` : ""}</option>)}
                     </select>
                   </div>
-                  {selectedTier && <Button size="sm" variant="outline" onClick={repriceWithTier} disabled={busy}>Re-price lines with tier</Button>}
+                  {selectedTier && <Button size="sm" variant="outline" onClick={repriceWithTier} disabled={busy}>Tier ke hisaab se rate badlein</Button>}
                   <div className="space-y-1">
-                    <label className="text-[10px] uppercase text-muted-foreground block">Scenario label</label>
+                    <label className="text-[10px] uppercase text-muted-foreground block">Scenario naam</label>
                     <Input className="h-8 w-40" defaultValue={selectedEstimate?.scenario_label ?? ""} placeholder="e.g. DGU vs single"
                       onBlur={(e) => { if (e.target.value !== (selectedEstimate?.scenario_label ?? "")) setScenario(e.target.value); }} />
                   </div>
                 </div>
               )}
               <div className="grid grid-cols-[1.4fr_90px_80px_110px_120px_28px] gap-2 text-[10px] uppercase text-muted-foreground px-1">
-                <span>System</span><span>Elevation</span><span>Area (sqm)</span><span>Rate/sqm</span><span>Amount</span><span /></div>
+                <span>System</span><span>Elevation</span><span>Area (sqm)</span><span>Rate/sqm</span><span>Total</span><span /></div>
               {lines.map((l, i) => {
                 const amount = (Number(l.area_sqm) || 0) * (Number(l.rate_per_sqm) || 0);
                 return (
@@ -487,7 +487,7 @@ export default function ProjectDetail() {
                     ) : (
                       <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" disabled={ro}
                         value={l.system_id ?? ""} onChange={(e) => pickSystem(i, e.target.value)}>
-                        <option value="" disabled>Pick system…</option>
+                        <option value="" disabled>System chunein…</option>
                         {(sysQ.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.code} · {s.name}</option>)}
                       </select>
                     )}
@@ -504,7 +504,7 @@ export default function ProjectDetail() {
                       <div className="col-span-full -mt-1 flex items-center gap-1.5 pl-1">
                         <Sparkles className="h-3 w-3 text-primary" />
                         <span className={`text-[10px] ${l.area_source === "ai" ? "text-muted-foreground" : "text-amber-600"}`}>
-                          AI {l.ai_confidence}% · {l.area_source === "ai" ? "auto-filled" : "low confidence — verify"}
+                          AI {l.ai_confidence}% · {l.area_source === "ai" ? "apne aap bhara" : "bharosa kam — check karein"}
                           {l.ai_confidence_reason ? ` · ${l.ai_confidence_reason}` : ""}
                         </span>
                       </div>
@@ -512,20 +512,20 @@ export default function ProjectDetail() {
                   </div>
                 );
               })}
-              {lines.length === 0 && <p className="text-xs text-muted-foreground px-1">No lines. Add a system to estimate.</p>}
+              {lines.length === 0 && <p className="text-xs text-muted-foreground px-1">Koi line nahi. Estimate me system jodein.</p>}
               <Separator className="my-2" />
               <div className="space-y-1 ml-auto w-full max-w-xs text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="tabular-nums">{formatINR(total)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Subtotal (jod)</span><span className="tabular-nums">{formatINR(total)}</span></div>
                 {contingencyPct > 0 && (
                   <div className="flex justify-between"><span className="text-muted-foreground">Contingency ({contingencyPct}%)</span><span className="tabular-nums">{formatINR(contingency)}</span></div>
                 )}
-                <div className="flex justify-between font-bold text-primary text-lg pt-1 border-t"><span>Estimate total</span><span className="tabular-nums">{formatINR(grandTotal)}</span></div>
+                <div className="flex justify-between font-bold text-primary text-lg pt-1 border-t"><span>Estimate ka total</span><span className="tabular-nums">{formatINR(grandTotal)}</span></div>
               </div>
 
               {/* v1.3 revision history */}
               {revQ.data && revQ.data.length > 0 && (
                 <div className="border-t pt-2 mt-2">
-                  <p className="text-[10px] uppercase text-muted-foreground mb-1">Revision history ({revQ.data.length})</p>
+                  <p className="text-[10px] uppercase text-muted-foreground mb-1">Purane versions ({revQ.data.length})</p>
                   <div className="space-y-0.5 max-h-32 overflow-auto">
                     {revQ.data.map((r) => (
                       <div key={r.id} className="text-[11px] text-muted-foreground flex justify-between">
@@ -543,6 +543,7 @@ export default function ProjectDetail() {
         {/* Quotations */}
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><FileSignature className="h-4 w-4" /> Quotations</CardTitle></CardHeader>
+          {/* Quotations section */}
           <CardContent>
             {quotesQ.data && quotesQ.data.length > 0 ? (
               <div className="space-y-2">
@@ -552,13 +553,13 @@ export default function ProjectDetail() {
                     <span className="flex items-center gap-3">
                       <Badge variant="outline" className="font-mono">{q.code}</Badge>
                       <Badge variant="secondary">{q.status}</Badge>
-                      {q.valid_until && <span className="text-xs text-muted-foreground">valid until {q.valid_until}</span>}
+                      {q.valid_until && <span className="text-xs text-muted-foreground">valid {q.valid_until} tak</span>}
                     </span>
                     <span className="font-medium tabular-nums">{formatINR(q.total_amount)}</span>
                   </button>
                 ))}
               </div>
-            ) : <p className="text-sm text-muted-foreground">No quotations yet. {canCreate && "Generate one from an estimate above."}</p>}
+            ) : <p className="text-sm text-muted-foreground">Abhi koi quotation nahi. {canCreate && "Upar estimate se banayein."}</p>}
           </CardContent>
         </Card>
 
@@ -566,7 +567,7 @@ export default function ProjectDetail() {
         {stagesQ.data && stagesQ.data.length > 0 && (
           <Card>
             <CardHeader className="pb-3 flex-row items-center justify-between">
-              <CardTitle className="text-sm flex items-center gap-2"><ListChecks className="h-4 w-4" /> Execution stages</CardTitle>
+              <CardTitle className="text-sm flex items-center gap-2"><ListChecks className="h-4 w-4" /> Kaam ke stages</CardTitle>
               <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                 {(["fresh", "warn", "amber", "stale"] as const).map((lvl) => (
                   <span key={lvl} className="flex items-center gap-1"><span className={`h-2 w-2 rounded-full ${AGING_CLASS[lvl]}`} />{AGING_LABEL[lvl]}</span>
@@ -585,16 +586,16 @@ export default function ProjectDetail() {
                       <p className="text-sm font-medium truncate">{s.stage}</p>
                       <p className="text-[11px] text-muted-foreground">
                         {s.status}
-                        {s.started_at && ` · started ${new Date(s.started_at).toLocaleDateString("en-IN")}`}
-                        {s.status === "in_progress" && hrs != null && ` · running ${fmtHours(hrs)}`}
-                        {s.completed_at && ` · done ${new Date(s.completed_at).toLocaleDateString("en-IN")}`}
+                        {s.started_at && ` · shuru ${new Date(s.started_at).toLocaleDateString("en-IN")}`}
+                        {s.status === "in_progress" && hrs != null && ` · chal raha ${fmtHours(hrs)}`}
+                        {s.completed_at && ` · poora ${new Date(s.completed_at).toLocaleDateString("en-IN")}`}
                       </p>
                     </div>
                     <select className="h-8 rounded-md border border-input bg-background px-2 text-xs max-w-[140px]" disabled={ro}
                       value={s.owner_id ?? ""}
                       onChange={(e) => changeStage(s.id, { owner_id: e.target.value || null }, "assign")}>
-                      <option value="">Unassigned</option>
-                      {s.owner_id && !empById[s.owner_id] && <option value={s.owner_id}>{empById[s.owner_id] ?? "Assigned"}</option>}
+                      <option value="">Kisi ko nahi diya</option>
+                      {s.owner_id && !empById[s.owner_id] && <option value={s.owner_id}>{empById[s.owner_id] ?? "Diya gaya"}</option>}
                       {(empQ.data ?? []).map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                     </select>
                     {!ro && (
@@ -615,11 +616,11 @@ export default function ProjectDetail() {
         {selectedEstimate && aiCfg.review?.enabled && (
           <Card>
             <CardHeader className="pb-3 flex-row items-center justify-between">
-              <CardTitle className="text-sm flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> AI second-checker</CardTitle>
-              {!ro && <Button size="sm" variant="outline" onClick={runReview} disabled={reviewing}>{reviewing ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5 mr-1" />}Review estimate</Button>}
+              <CardTitle className="text-sm flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> AI dobara jaanch</CardTitle>
+              {!ro && <Button size="sm" variant="outline" onClick={runReview} disabled={reviewing}>{reviewing ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5 mr-1" />}Estimate jaanchein</Button>}
             </CardHeader>
             <CardContent>
-              <p className="text-[11px] text-muted-foreground mb-2">Advisory QA on top of the deterministic guardrails. AI flags omissions/risks but changes no number.</p>
+              <p className="text-[11px] text-muted-foreground mb-2">AI estimate me galti/kami batata hai (sirf salah, koi number nahi badalta).</p>
               {reviewQ.data && reviewQ.data.length > 0 ? (
                 <div className="space-y-2">
                   {reviewQ.data[0].risk_summary && <p className="text-sm">{reviewQ.data[0].risk_summary}</p>}
@@ -630,15 +631,15 @@ export default function ProjectDetail() {
                       </li>
                     ))}
                   </ul>
-                  <p className="text-[10px] text-muted-foreground">Last reviewed {new Date(reviewQ.data[0].created_at).toLocaleString("en-IN")}</p>
+                  <p className="text-[10px] text-muted-foreground">Aakhri jaanch {new Date(reviewQ.data[0].created_at).toLocaleString("en-IN")}</p>
                 </div>
-              ) : <p className="text-xs text-muted-foreground">No review yet.</p>}
+              ) : <p className="text-xs text-muted-foreground">Abhi jaanch nahi hui.</p>}
             </CardContent>
           </Card>
         )}
 
         {/* AI-2 tender scope extraction */}
-        {selectedEstimate && <TenderScopePanel projectId={id} onAddLines={(newLines) => { setLines((a) => [...a, ...newLines]); toast.info("Review the added lines, then Save the estimate"); }} />}
+        {selectedEstimate && <TenderScopePanel projectId={id} onAddLines={(newLines) => { setLines((a) => [...a, ...newLines]); toast.info("Nayi lines dekhein, phir estimate Save karein"); }} />}
 
         {/* Estimate vs actual (v1.2 feedback loop) */}
         <ActualsPanel projectId={id} estimate={selectedEstimate} />
@@ -646,16 +647,16 @@ export default function ProjectDetail() {
         {/* Exports (F5 — dormant: downloads only, no cps/finance writes) */}
         {canCreate && (
           <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Download className="h-4 w-4" /> Exports <Badge variant="outline" className="ml-1 text-[10px]">dormant · downloads only</Badge></CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Download className="h-4 w-4" /> Export <Badge variant="outline" className="ml-1 text-[10px]">abhi sirf download</Badge></CardTitle></CardHeader>
             <CardContent className="flex flex-wrap gap-3">
               <Button variant="outline" size="sm" onClick={exportToCps} disabled={busy || !selEst}>
-                <Download className="h-3.5 w-3.5 mr-1.5" />Export to CPS (procurement BOM)
+                <Download className="h-3.5 w-3.5 mr-1.5" />CPS ko bhejein (material BOM)
               </Button>
               <Button variant="outline" size="sm" onClick={exportToFinance} disabled={busy}>
-                <Download className="h-3.5 w-3.5 mr-1.5" />Export to Finance (client invoice)
+                <Download className="h-3.5 w-3.5 mr-1.5" />Finance ko bhejein (client invoice)
               </Button>
               <p className="text-[11px] text-muted-foreground w-full">
-                Produces JSON + CSV mirroring cps / finance column shapes and records a facade export row. It does not write to the cps or finance schemas.
+JSON + CSV file banata hai (cps / finance jaisa format) aur facade me record rakhta hai. cps ya finance me kuch nahi likhta.
               </p>
             </CardContent>
           </Card>

@@ -15,14 +15,14 @@ export default function RateCalculator() {
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Calculator className="h-6 w-6 text-primary" /> Rate Calculator
+            <Calculator className="h-6 w-6 text-primary" /> Rate Nikalo
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Open a system to edit members, materials and parameters, see the live cost build-up, and save a rate snapshot.
+            Kisi system par click karein — member, material aur setting badlein, live rate dekhein, aur snapshot save karein.
           </p>
         </div>
 
-        {isLoading && <p className="text-sm text-muted-foreground">Loading systems…</p>}
+        {isLoading && <p className="text-sm text-muted-foreground">Systems load ho rahe hain…</p>}
         {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -40,9 +40,9 @@ export default function RateCalculator() {
                 <CardTitle className="text-base pt-1">{s.name}</CardTitle>
               </CardHeader>
               <CardContent className="text-xs text-muted-foreground space-y-1">
-                <div className="flex justify-between"><span>Category</span><span className="text-foreground">{s.category ?? "—"}</span></div>
+                <div className="flex justify-between"><span>Type</span><span className="text-foreground">{s.category ?? "—"}</span></div>
                 <div className="flex justify-between"><span>Panel area</span><span className="text-foreground">{s.panel_area_sqm ?? "—"} sqm</span></div>
-                <div className="flex justify-between"><span>Powder coating</span><span className="text-foreground">{s.apply_powder_coating ? "Yes" : "No"}</span></div>
+                <div className="flex justify-between"><span>Powder coating</span><span className="text-foreground">{s.apply_powder_coating ? "Haan" : "Nahi"}</span></div>
                 <div className="flex justify-between"><span>OH &amp; profit</span><span className="text-foreground">{s.oh_profit_pct}%</span></div>
               </CardContent>
             </Card>

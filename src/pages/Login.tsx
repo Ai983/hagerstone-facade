@@ -30,7 +30,7 @@ export default function Login() {
     setLoginError("");
     const { error: err } = await signIn(email, password);
     if (err) {
-      setLoginError(err.message || "Invalid credentials");
+      setLoginError(err.message || "Galat email ya password");
       setLoginLoading(false);
     } else {
       navigate("/dashboard");
@@ -49,7 +49,7 @@ export default function Login() {
       });
       if (error) throw error;
     } catch (error: any) {
-      toast.error(error.message || "Google sign-in failed");
+      toast.error(error.message || "Google login fail hua");
       setGoogleLoading(false);
     }
   };
@@ -64,7 +64,7 @@ export default function Login() {
             </div>
           </div>
           <h1 className="text-2xl font-bold text-foreground">Hagerstone International</h1>
-          <p className="text-muted-foreground text-sm">Facade System</p>
+          <p className="text-muted-foreground text-sm">Facade System — Login karein</p>
         </div>
 
         <Card className="shadow-lg border-border">
@@ -76,7 +76,7 @@ export default function Login() {
                 </div>
               )}
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">Email (apna email daalein)</Label>
                 <Input
                   id="email"
                   type="email"
@@ -88,12 +88,12 @@ export default function Login() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">Password (gupt shabd)</Label>
                 <div className="relative">
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="Enter your password"
+                    placeholder="Apna password daalein"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
@@ -112,10 +112,10 @@ export default function Login() {
                 {loginLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Signing in...
+                    Login ho raha hai...
                   </>
                 ) : (
-                  "Sign In"
+                  "Login karein"
                 )}
               </Button>
             </form>
@@ -125,7 +125,7 @@ export default function Login() {
                 <span className="w-full border-t border-border" />
               </div>
               <div className="relative flex justify-center text-xs">
-                <span className="bg-card px-2 text-muted-foreground">or</span>
+                <span className="bg-card px-2 text-muted-foreground">ya</span>
               </div>
             </div>
 
@@ -140,14 +140,14 @@ export default function Login() {
               ) : (
                 <img src="/google-icon.svg" className="h-4 w-4 mr-2" alt="Google" />
               )}
-              Sign in with Google
+              Google se login karein
             </Button>
           </CardContent>
         </Card>
 
         <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <ShieldCheck className="h-3.5 w-3.5" />
-          <span>Enquiry → Rate → Estimate → Quotation → Execution</span>
+          <span>Poochh-taachh → Rate → Estimate → Quotation → Kaam</span>
         </div>
       </div>
     </div>

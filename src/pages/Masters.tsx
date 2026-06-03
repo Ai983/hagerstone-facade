@@ -184,13 +184,13 @@ export default function Masters() {
     <Layout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold">Masters</h1>
-          <p className="text-muted-foreground text-sm mt-1">Rate card, materials and aluminium sections. {ro && "Editing is admin-only."}</p>
+          <h1 className="text-2xl font-bold">Settings</h1>
+          <p className="text-muted-foreground text-sm mt-1">Rate card, material aur aluminium sections. {ro && "Sirf admin badal sakta hai."}</p>
         </div>
 
         {/* Rate card */}
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm">Active rate card</CardTitle></CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-sm">Chaalu rate card</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             {rcQ.data ? (
               <div className="flex flex-wrap gap-6 text-sm">
@@ -200,14 +200,14 @@ export default function Masters() {
                 <div><span className="text-muted-foreground">Powder coating </span><b>₹{rcQ.data.powder_coating_per_kg}/kg</b></div>
                 <div><span className="text-muted-foreground">From </span><b>{rcQ.data.effective_from}</b></div>
               </div>
-            ) : <p className="text-sm text-destructive">No active rate card.</p>}
+            ) : <p className="text-sm text-destructive">Koi chaalu rate card nahi.</p>}
 
             {/* v1.1 settings on the active card */}
             {rcQ.data && !ro && (
               <div className="border-t pt-4">
-                <p className="text-xs font-medium mb-2">Price validity &amp; landed-cost base (v1.1 — defaults preserve the baseline)</p>
+                <p className="text-xs font-medium mb-2">Price validity &amp; landed-cost (default rakho to rate nahi badlega)</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
-                  <div className="space-y-1"><Label className="text-xs">Valid until</Label>
+                  <div className="space-y-1"><Label className="text-xs">Kab tak valid</Label>
                     <Input className="h-8" type="date" value={rcSettings.valid_until} onChange={(e) => setRcSettings({ ...rcSettings, valid_until: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">Aluminium basis</Label>
                     <select className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm" value={rcSettings.aluminium_basis} onChange={(e) => setRcSettings({ ...rcSettings, aluminium_basis: e.target.value })}>
@@ -218,13 +218,13 @@ export default function Masters() {
                     <Input className="h-8" type="number" step="any" value={rcSettings.freight_handling_pct} onChange={(e) => setRcSettings({ ...rcSettings, freight_handling_pct: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">Import duty % {rcSettings.aluminium_basis === "landed" && "(ignored)"}</Label>
                     <Input className="h-8" type="number" step="any" value={rcSettings.import_duty_pct} onChange={(e) => setRcSettings({ ...rcSettings, import_duty_pct: e.target.value })} /></div>
-                  <Button className="h-8" onClick={saveRcSettings}><Save className="h-3.5 w-3.5 mr-1" />Save settings</Button>
+                  <Button className="h-8" onClick={saveRcSettings}><Save className="h-3.5 w-3.5 mr-1" />Settings save</Button>
                 </div>
                 <div className="space-y-1 mt-2"><Label className="text-xs">Escalation note (copied onto quotations)</Label>
                   <Input className="h-8" value={rcSettings.escalation_note} placeholder="Prices firm until valid-until date; thereafter subject to aluminium (LME) movement." onChange={(e) => setRcSettings({ ...rcSettings, escalation_note: e.target.value })} /></div>
                 <p className="text-[10px] text-muted-foreground mt-1">Basis "landed" + 0% uplift = no change to the verified rates. Switch to "stockist" only with a real freight/handling %.</p>
 
-                <p className="text-xs font-medium mt-3 mb-1">Cut-optimization bar parameters (used only by systems with cut-optimization ON)</p>
+                <p className="text-xs font-medium mt-3 mb-1">Cut-optimization bar settings (sirf cut-optimization ON wale systems me)</p>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
                   <div className="space-y-1"><Label className="text-xs">Stock bar (m)</Label><Input className="h-8" type="number" step="any" value={rcSettings.stock_bar_length_m} onChange={(e) => setRcSettings({ ...rcSettings, stock_bar_length_m: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">Kerf (mm)</Label><Input className="h-8" type="number" step="any" value={rcSettings.kerf_mm} onChange={(e) => setRcSettings({ ...rcSettings, kerf_mm: e.target.value })} /></div>
@@ -237,13 +237,13 @@ export default function Masters() {
 
             {!ro && (
               <div className="border-t pt-4">
-                <p className="text-xs font-medium mb-2 flex items-center gap-1"><Plus className="h-3.5 w-3.5" />New rate card (activates it, deactivates the old)</p>
+                <p className="text-xs font-medium mb-2 flex items-center gap-1"><Plus className="h-3.5 w-3.5" />Naya rate card (ye chaalu hoga, purana band)</p>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
                   <div className="space-y-1"><Label className="text-xs">Name</Label><Input className="h-8" value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">Alu /kg</Label><Input className="h-8" type="number" value={nc.aluminium_per_kg} onChange={(e) => setNc({ ...nc, aluminium_per_kg: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">Conv /kg</Label><Input className="h-8" type="number" value={nc.conversion_per_kg} onChange={(e) => setNc({ ...nc, conversion_per_kg: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">Coat /kg</Label><Input className="h-8" type="number" value={nc.powder_coating_per_kg} onChange={(e) => setNc({ ...nc, powder_coating_per_kg: e.target.value })} /></div>
-                  <Button className="h-8" onClick={submitRateCard} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}</Button>
+                  <Button className="h-8" onClick={submitRateCard} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Banayein"}</Button>
                 </div>
                 {rcAllQ.data && rcAllQ.data.length > 1 && (
                   <p className="text-[11px] text-muted-foreground mt-2">{rcAllQ.data.length} rate cards on record.</p>
@@ -256,15 +256,15 @@ export default function Masters() {
         {/* Price feed (A3 — semi-live, human-in-the-loop) */}
         {!ro && (
           <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-sm">Aluminium price feed</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Aluminium price feed (market bhaav)</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <p className="text-[11px] text-muted-foreground">Log an index observation (e.g. LME/MCX). Applying to the rate card is one-click and audited — never silent. A reliable free INR feed isn't guaranteed; manual entry + the v1.1 staleness reminder is the realistic default.</p>
               <div className="flex flex-wrap items-end gap-2">
                 <div className="space-y-1"><Label className="text-xs">Index</Label><Input className="h-8 w-32" value={obs.index_name} onChange={(e) => setObs({ ...obs, index_name: e.target.value })} /></div>
                 <div className="space-y-1"><Label className="text-xs">Value ₹/kg</Label><Input className="h-8 w-28" type="number" step="any" value={obs.value_per_kg_inr} onChange={(e) => setObs({ ...obs, value_per_kg_inr: e.target.value })} /></div>
-                <Button className="h-8" variant="outline" onClick={recordObs}>Log observation</Button>
+                <Button className="h-8" variant="outline" onClick={recordObs}>Bhaav likhein</Button>
                 {feedQ.data && feedQ.data.length > 0 && rcQ.data && (
-                  <Button className="h-8" onClick={applyLatestToCard}>Apply latest (₹{feedQ.data[0].value_per_kg_inr}) to rate card</Button>
+                  <Button className="h-8" onClick={applyLatestToCard}>Naya bhaav (₹{feedQ.data[0].value_per_kg_inr}) rate card me lagayein</Button>
                 )}
               </div>
               {feedQ.data && feedQ.data.length > 0 && (
@@ -280,7 +280,7 @@ export default function Masters() {
 
         {/* Calculator thresholds (v1.1 guardrails) */}
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm">Calculator thresholds</CardTitle></CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-sm">Warning ki limits</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             <p className="text-[11px] text-muted-foreground">Editable warning thresholds — rules of thumb from research, calibrate against real jobs.</p>
             {cfg.map((row, i) => (
@@ -299,11 +299,11 @@ export default function Masters() {
         {/* AI settings */}
         {!ro && (
           <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-sm">AI features</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">AI features (chaalu/band)</CardTitle></CardHeader>
             <CardContent className="space-y-2">
               <p className="text-[11px] text-muted-foreground">Enable/disable AI assists and set the confidence gate. Tier-3 learning features (rate_suggest / anomaly / variance) ship <b>disabled</b> — enable only after ~12–24 months of real actuals, or they produce confident-but-wrong numbers.</p>
               <div className="grid grid-cols-[140px_70px_90px_1fr_32px] gap-2 text-[10px] uppercase text-muted-foreground px-1">
-                <span>Feature</span><span>Enabled</span><span>Threshold</span><span>Tier</span><span /></div>
+                <span>Feature</span><span>Chaalu</span><span>Limit</span><span>Tier</span><span /></div>
               {aiCfg.map((row, i) => {
                 const tier3 = ["rate_suggest", "anomaly", "variance"].includes(row.feature);
                 return (
@@ -311,7 +311,7 @@ export default function Masters() {
                     <span className="text-xs font-mono">{row.feature}</span>
                     <div className="h-8 flex items-center"><Switch checked={row.enabled} onCheckedChange={(v) => setAiCfg((a) => a.map((x, j) => j === i ? { ...x, enabled: v } : x))} /></div>
                     <Input className="h-8" type="number" step="any" value={String(row.confidence_threshold)} onChange={(e) => setAiCfg((a) => a.map((x, j) => j === i ? { ...x, confidence_threshold: e.target.value as any } : x))} />
-                    <span className={`text-[11px] ${tier3 ? "text-amber-600" : "text-muted-foreground"}`}>{tier3 ? "Tier 3 — needs historical data" : "Tier 1/2"}</span>
+                    <span className={`text-[11px] ${tier3 ? "text-amber-600" : "text-muted-foreground"}`}>{tier3 ? "Tier 3 — purana data chahiye" : "Tier 1/2"}</span>
                     <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => saveAiCfg(aiCfg[i])}><Save className="h-3.5 w-3.5" /></Button>
                   </div>
                 );
@@ -323,20 +323,20 @@ export default function Masters() {
         {/* A5 compatibility rules */}
         {!ro && (
           <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-sm">Compatibility warnings</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Compatibility warnings (galat jodi)</CardTitle></CardHeader>
             <CardContent className="space-y-2">
               <p className="text-[11px] text-muted-foreground">Light plausibility checks (warn-only, not structural engineering). A rule fires when a system uses the chosen section and material together. Keep the set small.</p>
               <div className="flex flex-wrap items-end gap-2">
                 <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" value={newRule.section_id} onChange={(e) => setNewRule({ ...newRule, section_id: e.target.value })}>
-                  <option value="">Section…</option>
+                  <option value="">Section chunein…</option>
                   {secs.map((s) => <option key={s.id} value={s.id}>{s.section_no} · {s.name}</option>)}
                 </select>
                 <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" value={newRule.material_id} onChange={(e) => setNewRule({ ...newRule, material_id: e.target.value })}>
-                  <option value="">Material…</option>
+                  <option value="">Material chunein…</option>
                   {mats.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
-                <Input className="h-8 flex-1 min-w-[200px]" placeholder="Warning message" value={newRule.message} onChange={(e) => setNewRule({ ...newRule, message: e.target.value })} />
-                <Button className="h-8" variant="outline" onClick={addRule}><Plus className="h-3.5 w-3.5 mr-1" />Add rule</Button>
+                <Input className="h-8 flex-1 min-w-[200px]" placeholder="Warning message (jaise: ye glass is plate ke saath sahi nahi)" value={newRule.message} onChange={(e) => setNewRule({ ...newRule, message: e.target.value })} />
+                <Button className="h-8" variant="outline" onClick={addRule}><Plus className="h-3.5 w-3.5 mr-1" />Rule jodein</Button>
               </div>
               {compatQ.data && compatQ.data.length > 0 && (
                 <div className="space-y-1 pt-1">
@@ -360,7 +360,7 @@ export default function Masters() {
           <CardHeader className="pb-3"><CardTitle className="text-sm">Materials ({mats.length})</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             <div className="grid grid-cols-[1fr_90px_70px_90px_60px_32px] gap-2 text-[10px] uppercase text-muted-foreground px-1">
-              <span>Name</span><span>Category</span><span>Unit</span><span>Default rate</span><span>Infill</span><span /></div>
+              <span>Naam</span><span>Type</span><span>Unit</span><span>Default rate</span><span>Glass?</span><span /></div>
             {mats.map((m, i) => (
               <div key={m.id} className="grid grid-cols-[1fr_90px_70px_90px_60px_32px] gap-2 items-center">
                 <Input className="h-8" disabled={ro} value={m.name} onChange={(e) => setMats((a) => a.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
@@ -371,7 +371,7 @@ export default function Masters() {
                 {!ro && <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => saveMaterial(mats[i])}><Save className="h-3.5 w-3.5" /></Button>}
                 {m.is_infill && (
                   <div className="col-span-full flex items-center gap-1.5 -mt-1 pl-1 text-[10px] text-muted-foreground">
-                    sheet (for 2D nesting):
+                    sheet size (nesting ke liye):
                     <input className="h-7 w-20 rounded border border-input bg-background px-1.5 text-xs" type="number" step="any" disabled={ro} placeholder="W mm" value={m.sheet_width_mm == null ? "" : String(m.sheet_width_mm)} onChange={(e) => setMats((a) => a.map((x, j) => j === i ? { ...x, sheet_width_mm: e.target.value as any } : x))} />
                     <input className="h-7 w-20 rounded border border-input bg-background px-1.5 text-xs" type="number" step="any" disabled={ro} placeholder="H mm" value={m.sheet_height_mm == null ? "" : String(m.sheet_height_mm)} onChange={(e) => setMats((a) => a.map((x, j) => j === i ? { ...x, sheet_height_mm: e.target.value as any } : x))} />
                     <input className="h-7 w-20 rounded border border-input bg-background px-1.5 text-xs" type="number" step="any" disabled={ro} placeholder="trim mm" value={m.sheet_edge_trim_mm == null ? "" : String(m.sheet_edge_trim_mm)} onChange={(e) => setMats((a) => a.map((x, j) => j === i ? { ...x, sheet_edge_trim_mm: e.target.value as any } : x))} />
@@ -384,10 +384,10 @@ export default function Masters() {
 
         {/* Sections */}
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm">Aluminium sections ({secs.length})</CardTitle></CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-sm">Aluminium sections / patti ({secs.length})</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             <div className="grid grid-cols-[90px_1fr_110px_32px] gap-2 text-[10px] uppercase text-muted-foreground px-1">
-              <span>Section no.</span><span>Name</span><span>Unit wt (kg/m)</span><span /></div>
+              <span>Section no.</span><span>Naam</span><span>Wt (kg/m)</span><span /></div>
             {secs.map((s, i) => (
               <div key={s.id} className="grid grid-cols-[90px_1fr_110px_32px] gap-2 items-center">
                 <Input className="h-8 font-mono" disabled={ro} value={s.section_no} onChange={(e) => setSecs((a) => a.map((x, j) => j === i ? { ...x, section_no: e.target.value } : x))} />

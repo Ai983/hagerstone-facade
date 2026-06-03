@@ -55,19 +55,19 @@ export const AuthCallback: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center p-6">
       {error ? (
         <div className="max-w-md text-center space-y-3">
-          <h1 className="text-xl font-semibold">Sign-in failed</h1>
+          <h1 className="text-xl font-semibold">Login fail hua</h1>
           <p className="text-sm text-muted-foreground">{error}</p>
           <button
             className="text-sm underline"
             onClick={() => navigate("/login", { replace: true })}
           >
-            Back to login
+            Wapas login par jaayein
           </button>
         </div>
       ) : (
         <div className="flex items-center gap-3 text-muted-foreground">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
-          <span>Signing you in…</span>
+          <span>Login ho raha hai…</span>
         </div>
       )}
     </div>

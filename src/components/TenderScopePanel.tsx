@@ -22,7 +22,7 @@ export function TenderScopePanel({ projectId, onAddLines }: { projectId: string;
   if (!canCreate) return null;
 
   const extract = async () => {
-    if (!text.trim()) { toast.error("Paste the tender/BOQ text first"); return; }
+    if (!text.trim()) { toast.error("Pehle tender/BOQ ka text paste karein"); return; }
     setBusy(true);
     try {
       const codes = (sysQ.data ?? []).map((s) => s.code);
@@ -35,7 +35,7 @@ export function TenderScopePanel({ projectId, onAddLines }: { projectId: string;
 
   const acceptSelected = async () => {
     const chosen = items.filter((i) => i._accept);
-    if (!chosen.length) { toast.error("Select at least one item"); return; }
+    if (!chosen.length) { toast.error("Kam se kam ek item chunein"); return; }
     const sysByCode = Object.fromEntries((sysQ.data ?? []).map((s) => [s.code, s]));
     const lines: EstimateLineDraft[] = [];
     for (const it of chosen) {
@@ -58,11 +58,11 @@ export function TenderScopePanel({ projectId, onAddLines }: { projectId: string;
 
   return (
     <Card>
-      <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><ScanText className="h-4 w-4" /> Tender scope extraction (AI)</CardTitle></CardHeader>
+      <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><ScanText className="h-4 w-4" /> Tender se kaam nikalo (AI)</CardTitle></CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-[11px] text-muted-foreground">Paste a tender BOQ/spec. AI proposes scope items and flags ambiguous / possibly-missed scope. You confirm before anything enters the estimate. Rates are snapshotted from the matched system; AI never sets a price.</p>
-        <Textarea rows={4} value={text} placeholder="Paste tender / BOQ / specification text…" onChange={(e) => setText(e.target.value)} />
-        <Button size="sm" onClick={extract} disabled={busy}>{busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <ScanText className="h-3.5 w-3.5 mr-1" />}Extract scope</Button>
+        <p className="text-[11px] text-muted-foreground">Tender/BOQ ka text yahan paste karein. AI items nikaalega aur jo cheez doubtful ya chhooti lage use mark karega. Aapke confirm karne par hi estimate me jaayega. Rate matched system se aata hai; AI rate tay nahi karta.</p>
+        <Textarea rows={4} value={text} placeholder="Tender / BOQ / spec ka text paste karein…" onChange={(e) => setText(e.target.value)} />
+        <Button size="sm" onClick={extract} disabled={busy}>{busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <ScanText className="h-3.5 w-3.5 mr-1" />}Kaam nikalo</Button>
 
         {items.length > 0 && (
           <div className="space-y-1.5">
@@ -73,13 +73,13 @@ export function TenderScopePanel({ projectId, onAddLines }: { projectId: string;
                   <div className="flex items-center gap-2">
                     {it.system_guess && <Badge variant="secondary" className="font-mono text-[10px]">{it.system_guess}</Badge>}
                     <span className="font-medium">{it.description}</span>
-                    {it.flagged && <span className="text-amber-600 flex items-center gap-0.5"><AlertTriangle className="h-3 w-3" />review</span>}
+                    {it.flagged && <span className="text-amber-600 flex items-center gap-0.5"><AlertTriangle className="h-3 w-3" />dekhein</span>}
                   </div>
-                  <span className="text-muted-foreground">{it.area_sqm != null ? `${it.area_sqm} sqm · ` : "no qty · "}conf {it.confidence}%{it.spec_notes ? ` · ${it.spec_notes}` : ""}</span>
+                  <span className="text-muted-foreground">{it.area_sqm != null ? `${it.area_sqm} sqm · ` : "qty nahi · "}bharosa {it.confidence}%{it.spec_notes ? ` · ${it.spec_notes}` : ""}</span>
                 </div>
               </div>
             ))}
-            <Button size="sm" onClick={acceptSelected}>Add selected to estimate</Button>
+            <Button size="sm" onClick={acceptSelected}>Chune hue estimate me daalein</Button>
           </div>
         )}
       </CardContent>

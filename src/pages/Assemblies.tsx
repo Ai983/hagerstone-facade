@@ -84,7 +84,7 @@ export default function Assemblies() {
       await replaceAssemblyMembers(sel, members.map((m) => ({ section_id: m.section_id ?? null, member_name: m.member_name || "Member", orientation: m.orientation || "fixed", base_cutlength_m: num(m.base_cutlength_m), number: Math.round(num(m.number)), qty: num(m.qty), unit_weight_kg_per_m: m.unit_weight_kg_per_m === "" || m.unit_weight_kg_per_m == null ? null : num(m.unit_weight_kg_per_m), sort_order: 0 })));
       await replaceAssemblyMaterials(sel, materials.map((m) => ({ material_id: m.material_id ?? null, qty_per_unit: num(m.qty_per_unit), is_infill: !!m.is_infill, wastage_applies: !!m.is_infill, sort_order: 0 })));
       await logAudit("assembly", sel, "update", user?.id ?? null, { code: a.code });
-      toast.success("Assembly saved");
+      toast.success("Set save ho gaya");
       qc.invalidateQueries({ queryKey: ["assemblies"] }); qc.invalidateQueries({ queryKey: ["asmMembers", sel] }); qc.invalidateQueries({ queryKey: ["asmMaterials", sel] });
     } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
   };
@@ -94,10 +94,10 @@ export default function Assemblies() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2"><Boxes className="h-6 w-6 text-primary" /> Parametric Assemblies</h1>
-            <p className="text-muted-foreground text-sm mt-1">Reusable building blocks (a bay = mullions + transoms + glass). Drop into estimates and scale by W×H×count. Geometric estimating approximation — real lengths come from drawings.</p>
+            <h1 className="text-2xl font-bold flex items-center gap-2"><Boxes className="h-6 w-6 text-primary" /> Ready Sets (Assemblies)</h1>
+            <p className="text-muted-foreground text-sm mt-1">Baar-baar use hone wale set (ek bay = mullion + transom + glass). Estimate me daalein aur W×H×count se badhayein. Ye anumaan hai — asli lambai drawing se aati hai.</p>
           </div>
-          {canManageRates && <Button onClick={newAssembly} disabled={busy}><Plus className="h-4 w-4 mr-2" />New assembly</Button>}
+          {canManageRates && <Button onClick={newAssembly} disabled={busy}><Plus className="h-4 w-4 mr-2" />Naya Set</Button>}
         </div>
 
         <div className="grid lg:grid-cols-[220px_1fr] gap-6">
@@ -107,15 +107,15 @@ export default function Assemblies() {
                 <Badge variant="secondary" className="font-mono text-[10px] mr-1">{x.code}</Badge>{x.name}
               </button>
             ))}
-            {listQ.data && listQ.data.length === 0 && <p className="text-xs text-muted-foreground">No assemblies yet.</p>}
+            {listQ.data && listQ.data.length === 0 && <p className="text-xs text-muted-foreground">Abhi koi set nahi.</p>}
           </div>
 
           {a ? (
             <div className="space-y-4">
               <Card>
                 <CardHeader className="pb-3 flex-row items-center justify-between">
-                  <CardTitle className="text-sm">Assembly parameters</CardTitle>
-                  {!ro && <Button size="sm" onClick={save} disabled={busy}>{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}Save</Button>}
+                  <CardTitle className="text-sm">Set ki settings</CardTitle>
+                  {!ro && <Button size="sm" onClick={save} disabled={busy}>{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}Save karein</Button>}
                 </CardHeader>
                 <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="space-y-1 col-span-2"><Label className="text-xs">Name</Label><Input className="h-8" disabled={ro} value={a.name} onChange={(e) => setA({ ...a, name: e.target.value })} /></div>
@@ -130,8 +130,8 @@ export default function Assemblies() {
 
               <Card>
                 <CardHeader className="pb-3 flex-row items-center justify-between">
-                  <CardTitle className="text-sm">Members</CardTitle>
-                  {!ro && <Button size="sm" variant="outline" onClick={() => setMembers((x) => [...x, { member_name: "", orientation: "horizontal", base_cutlength_m: 0, number: 1, qty: 1, unit_weight_kg_per_m: "", section_id: null }])}><Plus className="h-3.5 w-3.5 mr-1" />Add</Button>}
+                  <CardTitle className="text-sm">Members (patti)</CardTitle>
+                  {!ro && <Button size="sm" variant="outline" onClick={() => setMembers((x) => [...x, { member_name: "", orientation: "horizontal", base_cutlength_m: 0, number: 1, qty: 1, unit_weight_kg_per_m: "", section_id: null }])}><Plus className="h-3.5 w-3.5 mr-1" />Jodein</Button>}
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <div className="grid grid-cols-[1fr_90px_70px_50px_50px_70px_28px] gap-2 text-[10px] uppercase text-muted-foreground px-1"><span>Member</span><span>Orient.</span><span>Fixed m</span><span>No.</span><span>Qty</span><span>Unit wt</span><span /></div>
@@ -154,10 +154,10 @@ export default function Assemblies() {
               <Card>
                 <CardHeader className="pb-3 flex-row items-center justify-between">
                   <CardTitle className="text-sm">Materials</CardTitle>
-                  {!ro && <Button size="sm" variant="outline" onClick={() => setMaterials((x) => [...x, { material_id: matQ.data?.[0]?.id ?? null, qty_per_unit: 0, is_infill: matQ.data?.[0]?.is_infill ?? false }])} disabled={!matQ.data?.length}><Plus className="h-3.5 w-3.5 mr-1" />Add</Button>}
+                  {!ro && <Button size="sm" variant="outline" onClick={() => setMaterials((x) => [...x, { material_id: matQ.data?.[0]?.id ?? null, qty_per_unit: 0, is_infill: matQ.data?.[0]?.is_infill ?? false }])} disabled={!matQ.data?.length}><Plus className="h-3.5 w-3.5 mr-1" />Jodein</Button>}
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  <div className="grid grid-cols-[1fr_90px_70px_28px] gap-2 text-[10px] uppercase text-muted-foreground px-1"><span>Material</span><span>Qty/unit</span><span>Infill</span><span /></div>
+                  <div className="grid grid-cols-[1fr_90px_70px_28px] gap-2 text-[10px] uppercase text-muted-foreground px-1"><span>Material</span><span>Qty/set</span><span>Glass?</span><span /></div>
                   {materials.map((m, i) => (
                     <div key={i} className="grid grid-cols-[1fr_90px_70px_28px] gap-2 items-center">
                       <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" disabled={ro} value={m.material_id ?? ""} onChange={(e) => { const mat = matById[e.target.value]; setMaterials((x) => x.map((y, j) => j === i ? { ...y, material_id: e.target.value, is_infill: mat?.is_infill ?? y.is_infill } : y)); }}>
@@ -172,7 +172,7 @@ export default function Assemblies() {
               </Card>
 
               <Card>
-                <CardHeader className="pb-3"><CardTitle className="text-sm">Scaling preview</CardTitle></CardHeader>
+                <CardHeader className="pb-3"><CardTitle className="text-sm">Size daal kar dekho (preview)</CardTitle></CardHeader>
                 <CardContent className="flex flex-wrap items-end gap-3">
                   <div className="space-y-1"><Label className="text-xs">W (mm)</Label><Input className="h-8 w-24" type="number" value={preview.w} onChange={(e) => setPreview({ ...preview, w: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">H (mm)</Label><Input className="h-8 w-24" type="number" value={preview.h} onChange={(e) => setPreview({ ...preview, h: e.target.value })} /></div>
@@ -186,7 +186,7 @@ export default function Assemblies() {
                 </CardContent>
               </Card>
             </div>
-          ) : <p className="text-sm text-muted-foreground">Select or create an assembly.</p>}
+          ) : <p className="text-sm text-muted-foreground">Koi set chunein ya naya banayein.</p>}
         </div>
       </div>
     </Layout>

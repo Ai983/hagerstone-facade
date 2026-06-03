@@ -194,7 +194,7 @@ export default function SystemDetail() {
       await qc.invalidateQueries({ queryKey: ["members", id] });
       await qc.invalidateQueries({ queryKey: ["sysmat", id] });
       await qc.invalidateQueries({ queryKey: ["system", id] });
-      toast.success("System saved");
+      toast.success("System save ho gaya");
     } catch (e: any) {
       toast.error(e.message ?? "Save failed");
     } finally { setSaving(false); }
@@ -210,7 +210,7 @@ export default function SystemDetail() {
       });
       await logAudit("system_rate", id, "snapshot", user?.id ?? null,
         { rate_per_sqm: breakdown.rate_per_sqm, rate_card_id: rcQ.data.id });
-      toast.success(`Snapshot saved · ${formatINR(breakdown.rate_per_sqm)}/sqm`);
+      toast.success(`Snapshot save · ${formatINR(breakdown.rate_per_sqm)}/sqm`);
     } catch (e: any) {
       toast.error(e.message ?? "Snapshot failed");
     } finally { setSnapping(false); }
@@ -232,30 +232,30 @@ export default function SystemDetail() {
                 <Badge variant="secondary" className="font-mono">{params.code}</Badge>
                 <h1 className="text-xl font-bold">{params.name}</h1>
               </div>
-              <p className="text-xs text-muted-foreground">{ro ? "Read-only (rate editing is admin-only)" : "Editing · changes recalc live"}</p>
+              <p className="text-xs text-muted-foreground">{ro ? "Sirf dekh sakte hain (rate badalna admin ke paas)" : "Edit ho raha · badlav turant dikhega"}</p>
             </div>
           </div>
           <div className="flex gap-2">
             {!ro && <Button variant="outline" onClick={handleSave} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}Save
+              {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}Save karein
             </Button>}
             <Button onClick={handleSnapshot} disabled={snapping || !breakdown}>
-              {snapping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Camera className="h-4 w-4 mr-2" />}Save snapshot
+              {snapping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Camera className="h-4 w-4 mr-2" />}Snapshot save
             </Button>
           </div>
         </div>
 
-        {!rcQ.data && <p className="text-sm text-destructive">No active rate card — set one in Masters.</p>}
+        {!rcQ.data && <p className="text-sm text-destructive">Koi active rate card nahi — Settings me banayein.</p>}
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Left: editor */}
           <div className="lg:col-span-2 space-y-6">
             {/* Parameters */}
             <Card>
-              <CardHeader className="pb-3"><CardTitle className="text-sm">Parameters</CardTitle></CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">Settings (parameters)</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {[
-                  ["panel_width_mm", "Width (mm)"], ["panel_height_mm", "Height (mm)"], ["panel_area_sqm", "Area (sqm)"],
+                  ["panel_width_mm", "Chaudai (mm)"], ["panel_height_mm", "Unchai (mm)"], ["panel_area_sqm", "Area (sqm)"],
                   ["labour_per_sqm", "Labour /sqm"], ["freight_per_sqm", "Freight /sqm"], ["wastage_pct", "Wastage %"],
                   ["design_pct", "Design %"], ["misc_pct", "Misc %"], ["pmc_pct", "PMC %"], ["oh_profit_pct", "OH & profit %"],
                 ].map(([k, lbl]) => (
@@ -273,11 +273,11 @@ export default function SystemDetail() {
                   </div>
                 </div>
                 <div className="space-y-1 flex flex-col justify-end">
-                  <Label className="text-xs">Cut-optimization</Label>
+                  <Label className="text-xs">Cut-optimization (bar)</Label>
                   <div className="h-9 flex items-center gap-2">
                     <Switch checked={!!params.use_cut_optimization} disabled={ro}
                       onCheckedChange={(v) => setP("use_cut_optimization", v)} />
-                    <span className="text-[10px] text-muted-foreground">{params.use_cut_optimization ? "bar nesting" : "flat wastage"}</span>
+                    <span className="text-[10px] text-muted-foreground">{params.use_cut_optimization ? "bar nesting" : "seedha wastage"}</span>
                   </div>
                 </div>
                 {params.use_cut_optimization && (
@@ -290,11 +290,11 @@ export default function SystemDetail() {
                   </div>
                 )}
                 <div className="space-y-1 flex flex-col justify-end">
-                  <Label className="text-xs">Sheet nesting</Label>
+                  <Label className="text-xs">Sheet nesting (ACP/glass)</Label>
                   <div className="h-9 flex items-center gap-2">
                     <Switch checked={!!params.use_sheet_optimization} disabled={ro}
                       onCheckedChange={(v) => setP("use_sheet_optimization", v)} />
-                    <span className="text-[10px] text-muted-foreground">{params.use_sheet_optimization ? "2D nest infill" : "flat area"}</span>
+                    <span className="text-[10px] text-muted-foreground">{params.use_sheet_optimization ? "sheet ka hisaab" : "seedha area"}</span>
                   </div>
                 </div>
               </CardContent>
@@ -303,16 +303,16 @@ export default function SystemDetail() {
             {/* Members */}
             <Card>
               <CardHeader className="pb-3 flex-row items-center justify-between">
-                <CardTitle className="text-sm">Aluminium members</CardTitle>
-                {!ro && <Button size="sm" variant="outline" onClick={addMember}><Plus className="h-3.5 w-3.5 mr-1" />Add</Button>}
+                <CardTitle className="text-sm">Aluminium members (patti)</CardTitle>
+                {!ro && <Button size="sm" variant="outline" onClick={addMember}><Plus className="h-3.5 w-3.5 mr-1" />Jodein</Button>}
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="grid grid-cols-[1fr_70px_60px_50px_80px_28px] gap-2 text-[10px] uppercase text-muted-foreground px-1">
-                  <span>Member</span><span>Cut (m)</span><span>No.</span><span>Qty</span><span>Unit wt</span><span />
+                  <span>Member</span><span>Lambai m</span><span>No.</span><span>Qty</span><span>Wt/m</span><span />
                 </div>
                 {members.map((m, i) => (
                   <div key={i} className="grid grid-cols-[1fr_70px_60px_50px_80px_28px] gap-2 items-center">
-                    <Input className="h-8" disabled={ro} value={m.member_name} placeholder="name"
+                    <Input className="h-8" disabled={ro} value={m.member_name} placeholder="naam"
                       onChange={(e) => setMembers((a) => a.map((x, j) => j === i ? { ...x, member_name: e.target.value } : x))} />
                     <Input className="h-8" type="number" step="any" disabled={ro} value={numField(m.cutlength_m)}
                       onChange={(e) => setMembers((a) => a.map((x, j) => j === i ? { ...x, cutlength_m: e.target.value as any } : x))} />
@@ -325,19 +325,19 @@ export default function SystemDetail() {
                     {!ro && <Button size="icon" variant="ghost" className="h-8 w-7" onClick={() => setMembers((a) => a.filter((_, j) => j !== i))}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>}
                   </div>
                 ))}
-                {members.length === 0 && <p className="text-xs text-muted-foreground px-1">No members (e.g. frameless doors).</p>}
+                {members.length === 0 && <p className="text-xs text-muted-foreground px-1">Koi member nahi (jaise frameless door).</p>}
               </CardContent>
             </Card>
 
             {/* Materials */}
             <Card>
               <CardHeader className="pb-3 flex-row items-center justify-between">
-                <CardTitle className="text-sm">Materials (consumables &amp; infill)</CardTitle>
-                {!ro && <Button size="sm" variant="outline" onClick={addMaterial} disabled={!catQ.data?.length}><Plus className="h-3.5 w-3.5 mr-1" />Add</Button>}
+                <CardTitle className="text-sm">Materials (saamaan &amp; glass)</CardTitle>
+                {!ro && <Button size="sm" variant="outline" onClick={addMaterial} disabled={!catQ.data?.length}><Plus className="h-3.5 w-3.5 mr-1" />Jodein</Button>}
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="grid grid-cols-[1fr_70px_80px_60px_28px] gap-2 text-[10px] uppercase text-muted-foreground px-1">
-                  <span>Material</span><span>Qty</span><span>Rate ovr.</span><span>Infill</span><span />
+                  <span>Material</span><span>Qty</span><span>Rate badlo</span><span>Glass?</span><span />
                 </div>
                 {materials.map((m, i) => {
                   const cat = m.material_id ? materialById[m.material_id] : null;
@@ -363,7 +363,7 @@ export default function SystemDetail() {
                         <label className="text-[10px] text-muted-foreground flex items-center gap-1">
                           <input type="checkbox" disabled={ro} checked={!!m.is_sealant}
                             onChange={(e) => setMaterials((a) => a.map((x, j) => j === i ? { ...x, is_sealant: e.target.checked } : x))} />
-                          sealant (qty from bead volume)
+                          sealant (qty bead se nikalein)
                         </label>
                         {m.is_sealant && (
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -377,7 +377,7 @@ export default function SystemDetail() {
                               const deviates = manual > 0 && tubes > 0 && Math.abs(tubes - manual) / manual > 0.5;
                               return (
                                 <span className={`text-[10px] ${deviates ? "text-amber-600" : "text-primary"}`}>
-                                  = {tubes} tubes{deviates ? ` ⚠ entered qty ${manual} differs >50%` : ""}
+                                  = {tubes} tube{deviates ? ` ⚠ aapne ${manual} daala, 50% se zyada farak` : ""}
                                 </span>
                               );
                             })()}
@@ -394,11 +394,11 @@ export default function SystemDetail() {
             {params.use_sheet_optimization && (
               <Card>
                 <CardHeader className="pb-3 flex-row items-center justify-between">
-                  <CardTitle className="text-sm">Infill pieces (2D sheet nesting)</CardTitle>
-                  {!ro && <Button size="sm" variant="outline" onClick={() => setPieces((a) => [...a, { material_id: (catQ.data ?? []).find((c) => c.is_infill)?.id ?? null, width_mm: 0, height_mm: 0, count: 1, allow_rotation: true }])}><Plus className="h-3.5 w-3.5 mr-1" />Add piece</Button>}
+                  <CardTitle className="text-sm">Glass/ACP ke tukde (sheet nesting)</CardTitle>
+                  {!ro && <Button size="sm" variant="outline" onClick={() => setPieces((a) => [...a, { material_id: (catQ.data ?? []).find((c) => c.is_infill)?.id ?? null, width_mm: 0, height_mm: 0, count: 1, allow_rotation: true }])}><Plus className="h-3.5 w-3.5 mr-1" />Tukda jodein</Button>}
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  <p className="text-[11px] text-muted-foreground">Enter individual ACP/glass piece sizes. When ON, infill cost = whole sheets purchased (heuristic estimate, not a cut-plan). Materials need sheet dimensions set in Masters.</p>
+                  <p className="text-[11px] text-muted-foreground">Har ACP/glass tukde ka size daalein. ON par poori sheet ka kharcha lagega (anumaan, cutting plan nahi). Material ki sheet size Settings me daalni hogi.</p>
                   <div className="grid grid-cols-[1fr_70px_70px_50px_28px] gap-2 text-[10px] uppercase text-muted-foreground px-1"><span>Material</span><span>W mm</span><span>H mm</span><span>Count</span><span /></div>
                   {pieces.map((p, i) => (
                     <div key={i} className="grid grid-cols-[1fr_70px_70px_50px_28px] gap-2 items-center">
@@ -411,14 +411,14 @@ export default function SystemDetail() {
                       {!ro && <Button size="icon" variant="ghost" className="h-8 w-7" onClick={() => setPieces((a) => a.filter((_, j) => j !== i))}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>}
                     </div>
                   ))}
-                  {pieces.length === 0 && <p className="text-xs text-muted-foreground px-1">No pieces yet.</p>}
+                  {pieces.length === 0 && <p className="text-xs text-muted-foreground px-1">Abhi koi tukda nahi.</p>}
                   {/* per-material nest summary */}
                   {(() => {
                     const byMat: Record<string, any[]> = {};
                     for (const p of pieces) if (p.material_id) (byMat[p.material_id] ??= []).push(p);
                     const rows = Object.entries(byMat).map(([mid, ps]) => {
                       const cat = materialById[mid];
-                      if (!cat?.sheet_width_mm || !cat?.sheet_height_mm) return { name: cat?.name ?? "?", err: "no sheet dims (set in Masters)" };
+                      if (!cat?.sheet_width_mm || !cat?.sheet_height_mm) return { name: cat?.name ?? "?", err: "sheet size nahi (Settings me daalein)" };
                       const r = nestSheets(ps.map((p) => ({ width_mm: Number(p.width_mm) || 0, height_mm: Number(p.height_mm) || 0, count: Math.round(Number(p.count) || 0), allow_rotation: p.allow_rotation !== false })), { sheet_width_mm: Number(cat.sheet_width_mm), sheet_height_mm: Number(cat.sheet_height_mm), sheet_edge_trim_mm: Number(cat.sheet_edge_trim_mm) || 0 });
                       return { name: cat.name, r };
                     });
@@ -426,7 +426,7 @@ export default function SystemDetail() {
                       <div className="border-t pt-2 space-y-0.5">
                         {rows.map((x, k) => (
                           <p key={k} className="text-[11px] text-muted-foreground">
-                            <b>{x.name}</b>: {x.err ? <span className="text-amber-600">{x.err}</span> : <>{x.r!.sheets_used} sheets · {x.r!.sheet_wastage_pct.toFixed(1)}% wastage · purchased {x.r!.sheet_area_sqm.toFixed(2)} sqm{x.r!.oversized ? " ⚠ oversized piece" : ""}</>}
+                            <b>{x.name}</b>: {x.err ? <span className="text-amber-600">{x.err}</span> : <>{x.r!.sheets_used} sheet · {x.r!.sheet_wastage_pct.toFixed(1)}% wastage · {x.r!.sheet_area_sqm.toFixed(2)} sqm kharida{x.r!.oversized ? " ⚠ tukda bahut bada" : ""}</>}
                           </p>
                         ))}
                       </div>
@@ -440,23 +440,23 @@ export default function SystemDetail() {
           {/* Right: live build-up */}
           <div className="space-y-4">
             <Card className="sticky top-20">
-              <CardHeader className="pb-3"><CardTitle className="text-sm">Live cost build-up</CardTitle></CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">Live hisaab (rate kaise bana)</CardTitle></CardHeader>
               <CardContent className="text-sm space-y-1.5">
                 {breakdown && (
                   <>
-                    <Row label={`Aluminium (${breakdown.cut_optimized ? `${breakdown.purchased_alu_kg?.toFixed(3)} kg purchased` : `${breakdown.total_alu_kg.toFixed(3)} kg`})`} v={breakdown.aluminium_cost} />
+                    <Row label={`Aluminium (${breakdown.cut_optimized ? `${breakdown.purchased_alu_kg?.toFixed(3)} kg kharida` : `${breakdown.total_alu_kg.toFixed(3)} kg`})`} v={breakdown.aluminium_cost} />
                     {breakdown.cut_optimized && (
                       <p className="text-[10px] text-muted-foreground pl-1">
-                        used {breakdown.total_alu_kg.toFixed(2)} kg · offcut {breakdown.offcut_kg?.toFixed(2)} kg · real wastage {breakdown.optimized_wastage_pct?.toFixed(1)}%
+                        laga {breakdown.total_alu_kg.toFixed(2)} kg · bacha {breakdown.offcut_kg?.toFixed(2)} kg · asli wastage {breakdown.optimized_wastage_pct?.toFixed(1)}%
                       </p>
                     )}
                     <Row label="Conversion" v={breakdown.conversion_cost} />
                     <Row label="Powder coating" v={breakdown.coating_cost} />
-                    <Row label="Consumables" v={breakdown.consumable_total} />
-                    <Row label="Infill" v={breakdown.infill_total} />
+                    <Row label="Saamaan (consumables)" v={breakdown.consumable_total} />
+                    <Row label="Glass/Infill" v={breakdown.infill_total} />
                     <Row label={`Wastage (${params.wastage_pct}%)`} v={breakdown.wastage_cost} />
                     {breakdown.cut_optimized && breakdown.scrap_credit_amount ? (
-                      <Row label="Scrap credit" v={-(breakdown.scrap_credit_amount || 0)} />
+                      <Row label="Scrap credit (bachat)" v={-(breakdown.scrap_credit_amount || 0)} />
                     ) : null}
                     <Separator className="my-1" />
                     <Row label="Material total" v={breakdown.material_total} strong />
@@ -474,7 +474,7 @@ export default function SystemDetail() {
                         <Row label="Final amount" v={breakdown.final} strong />
                       </>
                     ) : (
-                      <p className="text-[11px] text-muted-foreground italic pt-1">Margin build-up hidden for your role.</p>
+                      <p className="text-[11px] text-muted-foreground italic pt-1">Margin ka hisaab aapke role me chhupa hai.</p>
                     )}
                     {guards.length > 0 && (
                       <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 space-y-1">

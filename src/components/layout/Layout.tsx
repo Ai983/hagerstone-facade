@@ -5,12 +5,12 @@ import { Building2, Calculator, Database, BadgeCheck, LogOut, LayoutDashboard, F
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/projects", label: "Projects", icon: FolderKanban },
-  { to: "/calculator", label: "Rate Calculator", icon: Calculator },
-  { to: "/assemblies", label: "Assemblies", icon: Boxes },
-  { to: "/masters", label: "Masters", icon: Database },
-  { to: "/verification", label: "Verification", icon: BadgeCheck },
+  { to: "/dashboard", label: "Home", icon: LayoutDashboard },
+  { to: "/projects", label: "Projects (Kaam)", icon: FolderKanban },
+  { to: "/calculator", label: "Rate Nikalo", icon: Calculator },
+  { to: "/assemblies", label: "Ready Sets", icon: Boxes },
+  { to: "/masters", label: "Settings", icon: Database },
+  { to: "/verification", label: "Jaanch", icon: BadgeCheck },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -26,6 +26,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Building2 className="h-4.5 w-4.5 text-primary" />
             </div>
             <span className="font-semibold text-sm hidden sm:block">Facade System</span>
+            {/* brand stays English; nav is Hinglish */}
           </div>
           <nav className="flex items-center gap-1 flex-1">
             {NAV.map((n) => (
@@ -51,7 +52,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 {user?.role}{canViewMargin ? " · margin" : ""}
               </p>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => signOut().then(() => navigate("/login"))} title="Sign out">
+            <Button variant="ghost" size="icon" onClick={() => signOut().then(() => navigate("/login"))} title="Logout">
               <LogOut className="h-4 w-4" />
             </Button>
           </div>

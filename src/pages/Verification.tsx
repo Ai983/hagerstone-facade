@@ -59,10 +59,9 @@ export default function Verification() {
     <Layout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><BadgeCheck className="h-6 w-6 text-primary" /> Verification Gate</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><BadgeCheck className="h-6 w-6 text-primary" /> Jaanch</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Global acceptance gate (PRD §8): every seeded system must reproduce the Excel "Rate per sqm" within ₹1,
-            computed by the live TypeScript rate engine.
+            Har system ka rate Excel ke "Rate per sqm" se ₹1 ke andar milna chahiye. App ka rate engine khud check karta hai.
           </p>
         </div>
 
@@ -73,20 +72,20 @@ export default function Verification() {
           <>
             <div className={`rounded-lg p-4 flex items-center gap-3 ${allPass ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-destructive/10 text-destructive"}`}>
               {allPass ? <BadgeCheck className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
-              <span className="font-semibold">{allPass ? "PASS — all 6 systems within ₹1 of the Excel" : "FAIL — one or more systems exceed ₹1"}</span>
+              <span className="font-semibold">{allPass ? "SAHI — saare 6 system Excel se ₹1 ke andar" : "GADBAD — koi system ₹1 se zyada"}</span>
             </div>
 
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Per-system comparison</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Har system ka milaan</CardTitle></CardHeader>
               <CardContent>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase text-muted-foreground border-b">
                       <th className="py-2">System</th>
-                      <th className="py-2 text-right">Engine rate</th>
+                      <th className="py-2 text-right">App rate</th>
                       <th className="py-2 text-right">Excel rate</th>
-                      <th className="py-2 text-right">Δ</th>
-                      <th className="py-2 text-right">Result</th>
+                      <th className="py-2 text-right">Farak</th>
+                      <th className="py-2 text-right">Natija</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -109,11 +108,11 @@ export default function Verification() {
         {/* Tier 3 AI — gated learning features (ship disabled) */}
         {tier3Q.data && (
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm">AI learning (Tier 3 — gated)</CardTitle></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">AI seekhne wale features (Tier 3 — band)</CardTitle></CardHeader>
             <CardContent className="space-y-2">
               <p className="text-[11px] text-muted-foreground">
-                Rate-suggestion, anomaly flagging and variance analysis need ~12–24 months of clean actuals to be trustworthy.
-                They ship <b>disabled</b>; enabling early produces confident-but-wrong numbers. Recorded actuals so far: <b>{tier3Q.data.samples}</b> (need ≥ {MIN_SAMPLES}).
+                Rate-suggestion, anomaly aur variance ke liye ~12–24 mahine ka asli data chahiye, tabhi bharosa hoga.
+                Ye abhi <b>band</b> hain; jaldi chaalu karne par galat number aayenge. Abhi tak data: <b>{tier3Q.data.samples}</b> (chahiye ≥ {MIN_SAMPLES}).
               </p>
               {(["rate_suggest", "anomaly", "variance"] as const).map((f) => {
                 const enabled = tier3Q.data!.cfg[f]?.enabled;
@@ -121,9 +120,9 @@ export default function Verification() {
                 return (
                   <div key={f} className="text-xs flex items-center justify-between border border-border rounded px-2 py-1.5">
                     <span className="font-mono">{f}</span>
-                    {!enabled ? <span className="text-muted-foreground">disabled (enable in Masters → AI features once data exists)</span>
-                      : ready ? <span className="text-emerald-600">active</span>
-                      : <span className="text-amber-600">enabled but insufficient historical data — no suggestions shown</span>}
+                    {!enabled ? <span className="text-muted-foreground">band (data aane par Settings → AI features me chaalu karein)</span>
+                      : ready ? <span className="text-emerald-600">chaalu</span>
+                      : <span className="text-amber-600">chaalu hai par data kam — koi sujhaav nahi</span>}
                   </div>
                 );
               })}

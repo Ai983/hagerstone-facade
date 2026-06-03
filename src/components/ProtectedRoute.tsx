@@ -17,10 +17,10 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="max-w-md text-center space-y-3">
-          <h1 className="text-xl font-semibold">No facade access</h1>
+          <h1 className="text-xl font-semibold">Facade ki permission nahi hai</h1>
           <p className="text-sm text-muted-foreground">
-            Your hub account is signed in, but it isn't enabled for the Facade module. Ask an
-            administrator to grant access.
+            Aap login to ho gaye hain, par aapke account me Facade module chalu nahi hai.
+            Kripya admin se permission lein.
           </p>
         </div>
       </div>
