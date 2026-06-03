@@ -29,6 +29,8 @@ export interface QuotationPdfData {
   location?: string | null;
   siteAddress?: string | null;
   terms?: string | null;
+  priceValidUntil?: string | null;   // v1.1
+  escalationClause?: string | null;  // v1.1
   lines: Array<{ description: string; area_sqm: number | null; rate_per_sqm: number | null; amount: number | null }>;
   total: number;
 }
@@ -66,7 +68,8 @@ export function generateQuotationPdf(d: QuotationPdfData): void {
   ].filter(Boolean) as string[];
   const rightLines = [
     `Date: ${fmtDate(d.date)}`,
-    `Valid until: ${fmtDate(d.validUntil)}`,
+    `Quote valid until: ${fmtDate(d.validUntil)}`,
+    d.priceValidUntil ? `Price valid until: ${fmtDate(d.priceValidUntil)}` : null,
     d.status ? `Status: ${d.status.toUpperCase()}` : null,
   ].filter(Boolean) as string[];
   const startY = y;
@@ -97,9 +100,17 @@ export function generateQuotationPdf(d: QuotationPdfData): void {
     margin: { left: M, right: M },
   });
 
-  // ── Terms
+  // ── Escalation clause (v1.1) + Terms
   // @ts-expect-error lastAutoTable is added by the plugin at runtime
   let ty = (doc.lastAutoTable?.finalY ?? y) + 24;
+  if (d.escalationClause) {
+    doc.setFont("helvetica", "bold").setFontSize(9.5).setTextColor(20);
+    doc.text("Price Escalation", M, ty); ty += 14;
+    doc.setFont("helvetica", "normal").setFontSize(8.5).setTextColor(70);
+    const wrapped = doc.splitTextToSize(d.escalationClause, W - 2 * M);
+    doc.text(wrapped, M, ty);
+    ty += wrapped.length * 11 + 12;
+  }
   if (d.terms) {
     doc.setFont("helvetica", "bold").setFontSize(9.5).setTextColor(20);
     doc.text("Terms & Conditions", M, ty); ty += 14;

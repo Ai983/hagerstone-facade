@@ -10,14 +10,15 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Trash2, Save, Camera, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Save, Camera, Loader2, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   fetchSystem, fetchSystemMembers, fetchSystemMaterials, fetchMaterials, fetchSections,
   fetchActiveRateCard, updateSystemParams, replaceMembers, replaceSystemMaterials, saveSnapshot,
-  type MemberDraft, type MaterialDraft,
+  fetchCalcConfig, type MemberDraft, type MaterialDraft,
 } from "@/lib/facadeApi";
-import { computeRate, resolveMember, resolveMaterial, formatINR } from "@/lib/rateEngine";
+import { computeRate, resolveMember, resolveMaterial, formatINR, sealantTubes } from "@/lib/rateEngine";
+import { validateSystem, DEFAULT_CALC_CONFIG } from "@/lib/guardrails";
 import { logAudit } from "@/lib/audit";
 
 const numField = (v: number | null | undefined) => (v == null ? "" : String(v));
@@ -35,6 +36,7 @@ export default function SystemDetail() {
   const catQ = useQuery({ queryKey: ["materials"], queryFn: fetchMaterials });
   const secQ = useQuery({ queryKey: ["sections"], queryFn: fetchSections });
   const rcQ = useQuery({ queryKey: ["activeRateCard"], queryFn: fetchActiveRateCard });
+  const cfgQ = useQuery({ queryKey: ["calcConfig"], queryFn: fetchCalcConfig });
 
   // editable local state
   const [params, setParams] = useState<any>(null);
@@ -54,6 +56,8 @@ export default function SystemDetail() {
     if (matQ.data) setMaterials(matQ.data.map((m) => ({
       material_id: m.material_id, qty: m.qty, rate_override: m.rate_override,
       is_infill: m.is_infill, wastage_applies: m.wastage_applies, sort_order: m.sort_order,
+      is_sealant: m.is_sealant, perimeter_m: m.perimeter_m, structural_bite_mm: m.structural_bite_mm,
+      glueline_mm: m.glueline_mm, tube_volume_ml: m.tube_volume_ml,
     })));
   }, [matQ.data]);
 
@@ -69,6 +73,20 @@ export default function SystemDetail() {
       resolveMember(m as any, m.section_id ? sectionById[m.section_id]?.default_unit_weight_kg_per_m : null));
     const materialInputs = materials.map((m) =>
       resolveMaterial(m as any, m.material_id ? materialById[m.material_id]?.default_rate : null));
+    const rc = rcQ.data;
+    const cutOpt = params.use_cut_optimization
+      ? {
+          enabled: true,
+          applyScrapCredit: !!params.apply_scrap_credit,
+          bar: {
+            stock_bar_length_m: Number(rc.stock_bar_length_m) || 6,
+            kerf_mm: Number(rc.kerf_mm) || 0,
+            bar_trim_mm: Number(rc.bar_trim_mm) || 0,
+            min_usable_offcut_mm: Number(rc.min_usable_offcut_mm) || 0,
+          },
+          scrap_recovery_pct: Number(rc.scrap_recovery_pct) || 0,
+        }
+      : undefined;
     return computeRate(
       {
         panel_area_sqm: toNum(params.panel_area_sqm),
@@ -81,9 +99,21 @@ export default function SystemDetail() {
         pmc_pct: toNum(params.pmc_pct),
         oh_profit_pct: toNum(params.oh_profit_pct),
       },
-      memberInputs, materialInputs, rcQ.data
+      memberInputs, materialInputs, rcQ.data, cutOpt
     );
   }, [params, members, materials, rcQ.data, sectionById, materialById]);
+
+  const guards = useMemo(() => {
+    if (!params) return [];
+    return validateSystem(
+      {
+        oh_profit_pct: toNum(params.oh_profit_pct), wastage_pct: toNum(params.wastage_pct),
+        labour_per_sqm: toNum(params.labour_per_sqm), freight_per_sqm: toNum(params.freight_per_sqm),
+      },
+      rcQ.data ?? null,
+      cfgQ.data ?? DEFAULT_CALC_CONFIG
+    );
+  }, [params, rcQ.data, cfgQ.data]);
 
   if (sysQ.isLoading || !params) {
     return <Layout><div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div></Layout>;
@@ -105,6 +135,8 @@ export default function SystemDetail() {
         wastage_pct: toNum(params.wastage_pct), design_pct: toNum(params.design_pct),
         misc_pct: toNum(params.misc_pct), pmc_pct: toNum(params.pmc_pct),
         oh_profit_pct: toNum(params.oh_profit_pct),
+        use_cut_optimization: !!params.use_cut_optimization,
+        apply_scrap_credit: !!params.apply_scrap_credit,
       });
       await replaceMembers(id, members.map((m) => ({
         section_id: m.section_id ?? null, member_name: m.member_name || "Member",
@@ -117,6 +149,11 @@ export default function SystemDetail() {
         material_id: m.material_id ?? null, qty: toNum(m.qty as any),
         rate_override: m.rate_override == null || (m.rate_override as any) === "" ? null : Number(m.rate_override),
         is_infill: !!m.is_infill, wastage_applies: !!m.wastage_applies, sort_order: 0,
+        is_sealant: !!m.is_sealant,
+        perimeter_m: (m.perimeter_m as any) === "" || m.perimeter_m == null ? null : Number(m.perimeter_m),
+        structural_bite_mm: (m.structural_bite_mm as any) === "" || m.structural_bite_mm == null ? null : Number(m.structural_bite_mm),
+        glueline_mm: (m.glueline_mm as any) === "" || m.glueline_mm == null ? null : Number(m.glueline_mm),
+        tube_volume_ml: (m.tube_volume_ml as any) === "" || m.tube_volume_ml == null ? null : Number(m.tube_volume_ml),
       })));
       await logAudit("system", id, "update", user?.id ?? null, { code: params.code });
       await qc.invalidateQueries({ queryKey: ["members", id] });
@@ -200,6 +237,23 @@ export default function SystemDetail() {
                       onCheckedChange={(v) => setP("apply_powder_coating", v)} />
                   </div>
                 </div>
+                <div className="space-y-1 flex flex-col justify-end">
+                  <Label className="text-xs">Cut-optimization</Label>
+                  <div className="h-9 flex items-center gap-2">
+                    <Switch checked={!!params.use_cut_optimization} disabled={ro}
+                      onCheckedChange={(v) => setP("use_cut_optimization", v)} />
+                    <span className="text-[10px] text-muted-foreground">{params.use_cut_optimization ? "bar nesting" : "flat wastage"}</span>
+                  </div>
+                </div>
+                {params.use_cut_optimization && (
+                  <div className="space-y-1 flex flex-col justify-end">
+                    <Label className="text-xs">Scrap credit</Label>
+                    <div className="h-9 flex items-center">
+                      <Switch checked={!!params.apply_scrap_credit} disabled={ro}
+                        onCheckedChange={(v) => setP("apply_scrap_credit", v)} />
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -262,6 +316,31 @@ export default function SystemDetail() {
                       <div className="flex items-center h-8"><Switch checked={!!m.is_infill} disabled={ro}
                         onCheckedChange={(v) => setMaterials((a) => a.map((x, j) => j === i ? { ...x, is_infill: v, wastage_applies: v } : x))} /></div>
                       {!ro && <Button size="icon" variant="ghost" className="h-8 w-7" onClick={() => setMaterials((a) => a.filter((_, j) => j !== i))}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>}
+                      <div className="col-span-full flex items-center gap-2 -mt-1 pl-1">
+                        <label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                          <input type="checkbox" disabled={ro} checked={!!m.is_sealant}
+                            onChange={(e) => setMaterials((a) => a.map((x, j) => j === i ? { ...x, is_sealant: e.target.checked } : x))} />
+                          sealant (qty from bead volume)
+                        </label>
+                        {m.is_sealant && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <input className="h-7 w-20 rounded border border-input bg-background px-1.5 text-xs" type="number" step="any" disabled={ro} placeholder="perimeter m" value={numField(m.perimeter_m)} onChange={(e) => setMaterials((a) => a.map((x, j) => j === i ? { ...x, perimeter_m: e.target.value as any } : x))} />
+                            <input className="h-7 w-16 rounded border border-input bg-background px-1.5 text-xs" type="number" step="any" disabled={ro} placeholder="bite mm" value={numField(m.structural_bite_mm)} onChange={(e) => setMaterials((a) => a.map((x, j) => j === i ? { ...x, structural_bite_mm: e.target.value as any } : x))} />
+                            <input className="h-7 w-16 rounded border border-input bg-background px-1.5 text-xs" type="number" step="any" disabled={ro} placeholder="glue mm" value={numField(m.glueline_mm)} onChange={(e) => setMaterials((a) => a.map((x, j) => j === i ? { ...x, glueline_mm: e.target.value as any } : x))} />
+                            <input className="h-7 w-16 rounded border border-input bg-background px-1.5 text-xs" type="number" step="any" disabled={ro} placeholder="tube ml" value={numField(m.tube_volume_ml)} onChange={(e) => setMaterials((a) => a.map((x, j) => j === i ? { ...x, tube_volume_ml: e.target.value as any } : x))} />
+                            {(() => {
+                              const tubes = Math.ceil(sealantTubes({ perimeter_m: Number(m.perimeter_m), structural_bite_mm: Number(m.structural_bite_mm), glueline_mm: Number(m.glueline_mm), tube_volume_ml: Number(m.tube_volume_ml) }));
+                              const manual = Number(m.qty) || 0;
+                              const deviates = manual > 0 && tubes > 0 && Math.abs(tubes - manual) / manual > 0.5;
+                              return (
+                                <span className={`text-[10px] ${deviates ? "text-amber-600" : "text-primary"}`}>
+                                  = {tubes} tubes{deviates ? ` ⚠ entered qty ${manual} differs >50%` : ""}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -276,12 +355,20 @@ export default function SystemDetail() {
               <CardContent className="text-sm space-y-1.5">
                 {breakdown && (
                   <>
-                    <Row label={`Aluminium (${breakdown.total_alu_kg.toFixed(3)} kg)`} v={breakdown.aluminium_cost} />
+                    <Row label={`Aluminium (${breakdown.cut_optimized ? `${breakdown.purchased_alu_kg?.toFixed(3)} kg purchased` : `${breakdown.total_alu_kg.toFixed(3)} kg`})`} v={breakdown.aluminium_cost} />
+                    {breakdown.cut_optimized && (
+                      <p className="text-[10px] text-muted-foreground pl-1">
+                        used {breakdown.total_alu_kg.toFixed(2)} kg · offcut {breakdown.offcut_kg?.toFixed(2)} kg · real wastage {breakdown.optimized_wastage_pct?.toFixed(1)}%
+                      </p>
+                    )}
                     <Row label="Conversion" v={breakdown.conversion_cost} />
                     <Row label="Powder coating" v={breakdown.coating_cost} />
                     <Row label="Consumables" v={breakdown.consumable_total} />
                     <Row label="Infill" v={breakdown.infill_total} />
                     <Row label={`Wastage (${params.wastage_pct}%)`} v={breakdown.wastage_cost} />
+                    {breakdown.cut_optimized && breakdown.scrap_credit_amount ? (
+                      <Row label="Scrap credit" v={-(breakdown.scrap_credit_amount || 0)} />
+                    ) : null}
                     <Separator className="my-1" />
                     <Row label="Material total" v={breakdown.material_total} strong />
                     <Row label="Labour" v={breakdown.labour_cost} />
@@ -299,6 +386,15 @@ export default function SystemDetail() {
                       </>
                     ) : (
                       <p className="text-[11px] text-muted-foreground italic pt-1">Margin build-up hidden for your role.</p>
+                    )}
+                    {guards.length > 0 && (
+                      <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 space-y-1">
+                        {guards.map((g, i) => (
+                          <p key={i} className="text-[11px] text-amber-700 dark:text-amber-400 flex items-start gap-1.5">
+                            <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />{g.message}
+                          </p>
+                        ))}
+                      </div>
                     )}
                     <div className="mt-3 rounded-lg bg-primary/10 p-3 text-center">
                       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Rate per sqm</p>

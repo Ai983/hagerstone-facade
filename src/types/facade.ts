@@ -41,6 +41,26 @@ export interface RateCard {
   is_active: boolean;
   created_by: string | null;
   created_at: string;
+  // v1.1
+  valid_until: string | null;
+  escalation_note: string | null;
+  aluminium_basis: "landed" | "stockist" | string;
+  freight_handling_pct: number;
+  // v1.2 cut-optimization / scrap params
+  stock_bar_length_m: number;
+  kerf_mm: number;
+  bar_trim_mm: number;
+  min_usable_offcut_mm: number;
+  scrap_recovery_pct: number;
+}
+
+export interface CalcConfigRow {
+  id: string;
+  key: string;
+  num_value: number | null;
+  text_value: string | null;
+  description: string | null;
+  updated_at: string;
 }
 
 export interface FacadeSystem {
@@ -63,6 +83,9 @@ export interface FacadeSystem {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // v1.2 toggles
+  use_cut_optimization: boolean;
+  apply_scrap_credit: boolean;
 }
 
 export interface SystemMember {
@@ -86,6 +109,31 @@ export interface SystemMaterial {
   is_infill: boolean;
   wastage_applies: boolean;
   sort_order: number;
+  // v1.3 sealant bead-volume
+  is_sealant: boolean;
+  perimeter_m: number | null;
+  structural_bite_mm: number | null;
+  glueline_mm: number | null;
+  tube_volume_ml: number | null;
+}
+
+export interface MarkupTier {
+  id: string;
+  name: string;
+  risk_level: string | null;
+  markup_pct: number;
+  contingency_pct: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface EstimateRevision {
+  id: string;
+  estimate_id: string;
+  snapshot: unknown;
+  changed_by: string | null;
+  changed_at: string;
+  change_note: string | null;
 }
 
 export interface SystemRate {
@@ -96,6 +144,24 @@ export interface SystemRate {
   breakdown: RateBreakdown | null;
   computed_at: string;
   computed_by: string | null;
+  // v1.2
+  optimized_wastage_pct: number | null;
+  offcut_kg: number | null;
+  scrap_credit_amount: number | null;
+}
+
+export interface Actual {
+  id: string;
+  project_id: string;
+  estimate_id: string | null;
+  total_alu_kg_actual: number | null;
+  wastage_pct_actual: number | null;
+  labour_cost_actual: number | null;
+  freight_cost_actual: number | null;
+  material_cost_actual: number | null;
+  notes: string | null;
+  recorded_by: string | null;
+  recorded_at: string;
 }
 
 export type ProjectStatus =
@@ -124,6 +190,10 @@ export interface Estimate {
   notes: string | null;
   created_by: string | null;
   created_at: string;
+  // v1.3
+  markup_tier_id: string | null;
+  contingency_pct: number;
+  scenario_label: string | null;
 }
 
 export interface EstimateLine {
@@ -152,6 +222,9 @@ export interface Quotation {
   total_amount: number;
   created_by: string | null;
   created_at: string;
+  // v1.1
+  price_valid_until: string | null;
+  escalation_clause: string | null;
 }
 
 export interface QuotationLine {

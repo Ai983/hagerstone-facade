@@ -1,8 +1,11 @@
 # Hagerstone Facade System — Deployment & SSO Guide (Phase 9)
 
-The app is **build-ready**. This guide covers local testing, Vercel deployment, and
-wiring the facade URL into the hub portal for SSO. Nothing here has been executed
-against production yet — run it when you're ready.
+**LIVE:** https://hagerstone-facade.vercel.app
+(Vercel project `ai-hagerstones-projects/hagerstone-facade`, GitHub `Ai983/hagerstone-facade`,
+auto-deploys on push to `main`. Vercel Deployment Protection is OFF — the app uses its own
+Supabase auth + RLS.)
+
+Remaining manual steps: (3) add redirect URLs in Supabase, (4) add the module tile in the hub portal.
 
 ---
 
@@ -71,8 +74,8 @@ and token-handoff redirects are accepted:
 
 - **Redirect URLs** — add:
   - `http://localhost:5173/auth/callback` (local)
-  - `https://<your-facade-domain>.vercel.app/auth/callback` (prod)
-  - `https://<your-facade-domain>.vercel.app/dashboard`
+  - `https://hagerstone-facade.vercel.app/auth/callback` (prod)
+  - `https://hagerstone-facade.vercel.app/dashboard`
 - If using a custom domain later, add it too.
 
 The Google OAuth client (`VITE_GOOGLE_CLIENT_ID`) must also list the facade domain under
@@ -90,7 +93,7 @@ tile/link that points at the deployed facade URL — mirroring how the hub links
 Typical hub module-tile shape (adjust to the hub portal's actual config):
 
 ```
-{ id: "facade", label: "Facade System", url: "https://<your-facade-domain>.vercel.app", icon: "building-2" }
+{ id: "facade", label: "Facade System", url: "https://hagerstone-facade.vercel.app", icon: "building-2" }
 ```
 
 SSO model: the hub and facade share the **same Supabase project + auth**. When a

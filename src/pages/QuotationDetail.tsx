@@ -10,12 +10,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { ArrowLeft, Save, Download, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Download, Loader2, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { fetchQuotation, fetchQuotationLines, fetchProject, updateQuotation, seedProjectStages, updateProjectStatus } from "@/lib/facadeApi";
+import {
+  fetchQuotation, fetchQuotationLines, fetchProject, updateQuotation, seedProjectStages, updateProjectStatus,
+  fetchSystems, fetchActiveRateCard, fetchCalcConfig,
+} from "@/lib/facadeApi";
 import { logAudit } from "@/lib/audit";
 import { formatINR } from "@/lib/rateEngine";
 import { generateQuotationPdf } from "@/lib/generateQuotationPdf";
+import { validateSystem } from "@/lib/guardrails";
 
 const QUOTE_STATUSES = ["draft", "sent", "approved", "rejected", "expired"];
 
@@ -31,8 +35,36 @@ export default function QuotationDetail() {
   const qQ = useQuery({ queryKey: ["quotation", id], queryFn: () => fetchQuotation(id), enabled: !!id });
   const lQ = useQuery({ queryKey: ["quotationLines", id], queryFn: () => fetchQuotationLines(id), enabled: !!id });
   const pQ = useQuery({ queryKey: ["project", qQ.data?.project_id], queryFn: () => fetchProject(qQ.data!.project_id), enabled: !!qQ.data?.project_id });
+  const gQ = useQuery({
+    queryKey: ["quoteGuards", id],
+    queryFn: async () => {
+      const [systems, rc, cfg] = await Promise.all([fetchSystems(), fetchActiveRateCard(), fetchCalcConfig()]);
+      return { systems, rc, cfg };
+    },
+    enabled: !!id,
+  });
+
+  // Guardrail warnings for the distinct systems used in this quotation
+  const guards = (() => {
+    if (!gQ.data || !lQ.data) return [] as { system: string; message: string }[];
+    const sysById = Object.fromEntries(gQ.data.systems.map((s) => [s.id, s]));
+    const seen = new Set<string>();
+    const out: { system: string; message: string }[] = [];
+    for (const l of lQ.data) {
+      if (!l.system_id || seen.has(l.system_id)) continue;
+      seen.add(l.system_id);
+      const sys = sysById[l.system_id];
+      if (!sys) continue;
+      for (const g of validateSystem(sys, gQ.data.rc, gQ.data.cfg)) {
+        out.push({ system: sys.code, message: g.message });
+      }
+    }
+    return out;
+  })();
 
   const [validUntil, setValidUntil] = useState("");
+  const [priceValidUntil, setPriceValidUntil] = useState("");
+  const [escalationClause, setEscalationClause] = useState("");
   const [terms, setTerms] = useState("");
   const [status, setStatus] = useState("draft");
   const [busy, setBusy] = useState(false);
@@ -40,6 +72,8 @@ export default function QuotationDetail() {
   useEffect(() => {
     if (qQ.data) {
       setValidUntil(qQ.data.valid_until ?? "");
+      setPriceValidUntil(qQ.data.price_valid_until ?? "");
+      setEscalationClause(qQ.data.escalation_clause ?? "");
       setTerms(qQ.data.terms ?? DEFAULT_TERMS);
       setStatus(qQ.data.status);
     }
@@ -51,7 +85,10 @@ export default function QuotationDetail() {
     setBusy(true);
     try {
       const newStatus = nextStatus ?? status;
-      await updateQuotation(id, { valid_until: validUntil || null, terms, status: newStatus });
+      await updateQuotation(id, {
+        valid_until: validUntil || null, terms, status: newStatus,
+        price_valid_until: priceValidUntil || null, escalation_clause: escalationClause || null,
+      });
       if (nextStatus && nextStatus !== qQ.data?.status) {
         await logAudit("quotation", id, `status:${nextStatus}`, user?.id ?? null, { from: qQ.data?.status, to: nextStatus });
       } else {
@@ -81,6 +118,7 @@ export default function QuotationDetail() {
       code: qQ.data.code, date: qQ.data.created_at, validUntil: validUntil || null, status,
       clientName: pQ.data.client_name, projectName: pQ.data.project_name,
       location: pQ.data.location, siteAddress: pQ.data.site_address, terms,
+      priceValidUntil: priceValidUntil || null, escalationClause: escalationClause || null,
       lines: (lQ.data ?? []).map((l) => ({ description: l.description, area_sqm: l.area_sqm, rate_per_sqm: l.rate_per_sqm, amount: l.amount })),
       total: qQ.data.total_amount,
     });
@@ -107,6 +145,17 @@ export default function QuotationDetail() {
           </div>
           <Button variant="outline" onClick={exportPdf}><Download className="h-4 w-4 mr-2" />Export PDF</Button>
         </div>
+
+        {guards.length > 0 && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-1">
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" /> {guards.length} pricing warning{guards.length > 1 ? "s" : ""} — review before sending
+            </p>
+            <ul className="text-xs text-amber-700/90 dark:text-amber-400/90 list-disc pl-6">
+              {guards.map((g, i) => <li key={i}><b className="font-mono">{g.system}</b> — {g.message}</li>)}
+            </ul>
+          </div>
+        )}
 
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
@@ -156,8 +205,17 @@ export default function QuotationDetail() {
               <CardHeader className="pb-3"><CardTitle className="text-sm">Client terms</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">Valid until</Label>
+                  <Label className="text-xs">Quote valid until</Label>
                   <Input type="date" disabled={ro} value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Price valid until</Label>
+                  <Input type="date" disabled={ro} value={priceValidUntil} onChange={(e) => setPriceValidUntil(e.target.value)} />
+                  <p className="text-[10px] text-muted-foreground">Prefilled from the rate card.</p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Price escalation clause</Label>
+                  <Textarea rows={3} disabled={ro} value={escalationClause} placeholder="e.g. Prices firm until the date above; thereafter subject to LME aluminium movement." onChange={(e) => setEscalationClause(e.target.value)} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Status</Label>

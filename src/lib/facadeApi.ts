@@ -2,9 +2,26 @@ import { supabase, hub } from "@/integrations/supabase/client";
 import type {
   FacadeSystem, SystemMember, SystemMaterial, Material, Section, RateCard, SystemRate, RateBreakdown,
   Project, Estimate, EstimateLine, Quotation, QuotationLine, ProjectStage, EmployeeLite,
-  ProcurementRequest, Payment, BomLine,
+  ProcurementRequest, Payment, BomLine, CalcConfigRow,
 } from "@/types/facade";
-import { computeRate, resolveMember, resolveMaterial } from "@/lib/rateEngine";
+import { DEFAULT_CALC_CONFIG, type CalcConfig } from "@/lib/guardrails";
+import { computeRate, resolveMember, resolveMaterial, type CutOptInput } from "@/lib/rateEngine";
+
+/** Build the cut-optimization input for a system, or undefined when its toggle is OFF (baseline). */
+export function cutOptFor(system: FacadeSystem, rc: RateCard | null): CutOptInput | undefined {
+  if (!system.use_cut_optimization || !rc) return undefined;
+  return {
+    enabled: true,
+    applyScrapCredit: !!system.apply_scrap_credit,
+    bar: {
+      stock_bar_length_m: Number(rc.stock_bar_length_m) || 6,
+      kerf_mm: Number(rc.kerf_mm) || 0,
+      bar_trim_mm: Number(rc.bar_trim_mm) || 0,
+      min_usable_offcut_mm: Number(rc.min_usable_offcut_mm) || 0,
+    },
+    scrap_recovery_pct: Number(rc.scrap_recovery_pct) || 0,
+  };
+}
 
 // ---------------- Reads ----------------
 
@@ -74,7 +91,8 @@ export type SystemParamPatch = Partial<
   Pick<FacadeSystem,
     "name" | "category" | "description" | "panel_width_mm" | "panel_height_mm" | "panel_area_sqm" |
     "apply_powder_coating" | "labour_per_sqm" | "freight_per_sqm" | "wastage_pct" | "design_pct" |
-    "misc_pct" | "pmc_pct" | "oh_profit_pct" | "is_active">
+    "misc_pct" | "pmc_pct" | "oh_profit_pct" | "is_active" |
+    "use_cut_optimization" | "apply_scrap_credit">
 >;
 
 export async function updateSystemParams(id: string, patch: SystemParamPatch): Promise<void> {
@@ -83,7 +101,8 @@ export async function updateSystemParams(id: string, patch: SystemParamPatch): P
 }
 
 export type MemberDraft = Omit<SystemMember, "id" | "system_id">;
-export type MaterialDraft = Omit<SystemMaterial, "id" | "system_id">;
+export type MaterialDraft = Omit<SystemMaterial, "id" | "system_id" | "is_sealant" | "perimeter_m" | "structural_bite_mm" | "glueline_mm" | "tube_volume_ml">
+  & Partial<Pick<SystemMaterial, "is_sealant" | "perimeter_m" | "structural_bite_mm" | "glueline_mm" | "tube_volume_ml">>;
 
 /** Replace all members for a system (delete + reinsert). */
 export async function replaceMembers(systemId: string, members: MemberDraft[]): Promise<void> {
@@ -120,6 +139,10 @@ export async function saveSnapshot(params: {
     rate_per_sqm: params.rate_per_sqm,
     breakdown: params.breakdown,
     computed_by: params.computed_by,
+    // v1.2 transparency columns
+    optimized_wastage_pct: params.breakdown.optimized_wastage_pct ?? null,
+    offcut_kg: params.breakdown.offcut_kg ?? null,
+    scrap_credit_amount: params.breakdown.scrap_credit_amount ?? null,
   }).select().single();
   if (error) throw error;
   return data as SystemRate;
@@ -142,6 +165,8 @@ export async function upsertSection(s: Partial<Section>): Promise<Section> {
 export async function createRateCard(rc: {
   name: string; aluminium_per_kg: number; conversion_per_kg: number;
   powder_coating_per_kg: number; created_by: string | null;
+  valid_until?: string | null; escalation_note?: string | null;
+  aluminium_basis?: string; freight_handling_pct?: number;
 }): Promise<RateCard> {
   // deactivate existing actives, then insert the new active card
   const upd = await supabase.from("rate_cards").update({ is_active: false }).eq("is_active", true);
@@ -150,6 +175,40 @@ export async function createRateCard(rc: {
     .insert({ ...rc, is_active: true }).select().single();
   if (error) throw error;
   return data as RateCard;
+}
+
+export async function updateRateCard(
+  id: string,
+  patch: Partial<Pick<RateCard,
+    "valid_until" | "escalation_note" | "aluminium_basis" | "freight_handling_pct" |
+    "stock_bar_length_m" | "kerf_mm" | "bar_trim_mm" | "min_usable_offcut_mm" | "scrap_recovery_pct">>
+): Promise<void> {
+  const { error } = await supabase.from("rate_cards").update(patch).eq("id", id);
+  if (error) throw error;
+}
+
+// ---------------- Calculator config (v1.1) ----------------
+
+export async function fetchCalcConfigRows(): Promise<CalcConfigRow[]> {
+  const { data, error } = await supabase.from("calc_config").select("*").order("key");
+  if (error) return [];
+  return (data as CalcConfigRow[]) ?? [];
+}
+
+/** Typed config map with shipped defaults as fallback (so guardrails work pre-migration). */
+export async function fetchCalcConfig(): Promise<CalcConfig> {
+  const rows = await fetchCalcConfigRows();
+  const map = { ...DEFAULT_CALC_CONFIG };
+  for (const r of rows) {
+    if (r.key in map && r.num_value != null) (map as any)[r.key] = Number(r.num_value);
+  }
+  return map;
+}
+
+export async function updateCalcConfig(key: string, num_value: number, updated_by: string | null): Promise<void> {
+  const { error } = await supabase.from("calc_config")
+    .update({ num_value, updated_by, updated_at: new Date().toISOString() }).eq("key", key);
+  if (error) throw error;
 }
 
 // ---------------- Reference IDs ----------------
@@ -164,7 +223,9 @@ export async function nextRef(prefix: "PRJ" | "EST" | "QT" | "PR" | "PAY"): Prom
 // ---------------- Current system rate (live, via the shared engine) ----------------
 
 /** Compute a system's current rate_per_sqm + breakdown from live members/materials + active rate card. */
-export async function computeSystemCurrentRate(systemId: string): Promise<{ rate_per_sqm: number; breakdown: RateBreakdown } | null> {
+export async function computeSystemCurrentRate(
+  systemId: string, opts?: { ohOverride?: number | null }
+): Promise<{ rate_per_sqm: number; breakdown: RateBreakdown } | null> {
   const [system, members, mats, materials, sections, rc] = await Promise.all([
     fetchSystem(systemId), fetchSystemMembers(systemId), fetchSystemMaterials(systemId),
     fetchMaterials(), fetchSections(), fetchActiveRateCard(),
@@ -176,11 +237,13 @@ export async function computeSystemCurrentRate(systemId: string): Promise<{ rate
     {
       panel_area_sqm: Number(system.panel_area_sqm) || 0, apply_powder_coating: system.apply_powder_coating,
       labour_per_sqm: system.labour_per_sqm, freight_per_sqm: system.freight_per_sqm, wastage_pct: system.wastage_pct,
-      design_pct: system.design_pct, misc_pct: system.misc_pct, pmc_pct: system.pmc_pct, oh_profit_pct: system.oh_profit_pct,
+      design_pct: system.design_pct, misc_pct: system.misc_pct, pmc_pct: system.pmc_pct,
+      oh_profit_pct: opts?.ohOverride != null ? opts.ohOverride : system.oh_profit_pct,
     },
     members.map((m) => resolveMember(m, m.section_id ? secById[m.section_id]?.default_unit_weight_kg_per_m : null)),
     mats.map((m) => resolveMaterial(m, m.material_id ? matById[m.material_id]?.default_rate : null)),
-    rc
+    rc,
+    cutOptFor(system, rc)
   );
   return { rate_per_sqm: breakdown.rate_per_sqm, breakdown };
 }
@@ -250,32 +313,75 @@ export type EstimateLineDraft = {
 };
 
 /** Replace all lines of an estimate and update its total_amount. amount is a generated column. */
-export async function saveEstimateLines(estimateId: string, lines: EstimateLineDraft[]): Promise<number> {
+export async function saveEstimateLines(
+  estimateId: string, lines: EstimateLineDraft[], changedBy?: string | null, note?: string
+): Promise<number> {
   const del = await supabase.from("estimate_lines").delete().eq("estimate_id", estimateId);
   if (del.error) throw del.error;
   let total = 0;
-  if (lines.length) {
-    const rows = lines.map((l, i) => {
-      total += (Number(l.area_sqm) || 0) * (Number(l.rate_per_sqm) || 0);
-      return {
-        estimate_id: estimateId, system_id: l.system_id, elevation_ref: l.elevation_ref,
-        area_sqm: Number(l.area_sqm) || 0, rate_per_sqm: Number(l.rate_per_sqm) || 0,
-        notes: l.notes, sort_order: i,
-        area_source: l.area_source ?? "manual",
-        ai_confidence: l.ai_confidence ?? null,
-        ai_confidence_reason: l.ai_confidence_reason ?? null,
-      };
-    });
-    const ins = await supabase.from("estimate_lines").insert(rows);
+  const snapLines = lines.map((l, i) => {
+    total += (Number(l.area_sqm) || 0) * (Number(l.rate_per_sqm) || 0);
+    return {
+      estimate_id: estimateId, system_id: l.system_id, elevation_ref: l.elevation_ref,
+      area_sqm: Number(l.area_sqm) || 0, rate_per_sqm: Number(l.rate_per_sqm) || 0,
+      notes: l.notes, sort_order: i,
+      area_source: l.area_source ?? "manual",
+      ai_confidence: l.ai_confidence ?? null,
+      ai_confidence_reason: l.ai_confidence_reason ?? null,
+    };
+  });
+  if (snapLines.length) {
+    const ins = await supabase.from("estimate_lines").insert(snapLines);
     if (ins.error) throw ins.error;
   }
   const upd = await supabase.from("estimates").update({ total_amount: total }).eq("id", estimateId);
   if (upd.error) throw upd.error;
+  // v1.3: write a revision snapshot (best-effort — never blocks the save)
+  try {
+    await createEstimateRevision(estimateId, { total, lines: snapLines }, changedBy ?? null, note ?? null);
+  } catch (e) { console.warn("revision snapshot failed", e); }
   return total;
 }
 
 export async function updateEstimateStatus(id: string, status: string): Promise<void> {
   const { error } = await supabase.from("estimates").update({ status }).eq("id", id);
+  if (error) throw error;
+}
+
+// ---- v1.3 markup tiers, estimate meta, revisions ----
+
+export async function fetchMarkupTiers(): Promise<import("@/types/facade").MarkupTier[]> {
+  const { data, error } = await supabase.from("markup_tiers").select("*").order("markup_pct");
+  if (error) return [];
+  return (data as import("@/types/facade").MarkupTier[]) ?? [];
+}
+
+export async function createMarkupTier(t: {
+  name: string; risk_level: string | null; markup_pct: number; contingency_pct: number;
+}): Promise<void> {
+  const { error } = await supabase.from("markup_tiers").insert(t);
+  if (error) throw error;
+}
+
+export async function updateEstimateMeta(
+  id: string, patch: Partial<Pick<Estimate, "markup_tier_id" | "contingency_pct" | "scenario_label" | "total_amount">>
+): Promise<void> {
+  const { error } = await supabase.from("estimates").update(patch).eq("id", id);
+  if (error) throw error;
+}
+
+export async function fetchEstimateRevisions(estimateId: string): Promise<import("@/types/facade").EstimateRevision[]> {
+  const { data, error } = await supabase.from("estimate_revisions").select("*")
+    .eq("estimate_id", estimateId).order("changed_at", { ascending: false });
+  if (error) return [];
+  return (data as import("@/types/facade").EstimateRevision[]) ?? [];
+}
+
+export async function createEstimateRevision(
+  estimateId: string, snapshot: unknown, changedBy: string | null, note: string | null
+): Promise<void> {
+  const { error } = await supabase.from("estimate_revisions")
+    .insert({ estimate_id: estimateId, snapshot, changed_by: changedBy, change_note: note });
   if (error) throw error;
 }
 
@@ -318,7 +424,7 @@ export async function fetchQuotationLines(quotationId: string): Promise<Quotatio
 export async function createQuotationFromEstimate(
   projectId: string, estimateId: string, createdBy: string | null
 ): Promise<Quotation> {
-  const [lines, systems] = await Promise.all([fetchEstimateLines(estimateId), fetchSystems()]);
+  const [lines, systems, rc] = await Promise.all([fetchEstimateLines(estimateId), fetchSystems(), fetchActiveRateCard()]);
   const sysById = Object.fromEntries(systems.map((s) => [s.id, s]));
   const code = await nextRef("QT");
   const total = lines.reduce((s, l) => s + (Number(l.area_sqm) || 0) * (Number(l.rate_per_sqm) || 0), 0);
@@ -326,6 +432,9 @@ export async function createQuotationFromEstimate(
   const { data: q, error } = await supabase.from("quotations").insert({
     code, project_id: projectId, estimate_id: estimateId, status: "draft",
     total_amount: total, created_by: createdBy,
+    // v1.1: carry price validity + escalation from the active rate card
+    price_valid_until: rc?.valid_until ?? null,
+    escalation_clause: rc?.escalation_note ?? null,
   }).select().single();
   if (error) throw error;
 
@@ -346,7 +455,7 @@ export async function createQuotationFromEstimate(
 }
 
 export async function updateQuotation(
-  id: string, patch: Partial<Pick<Quotation, "valid_until" | "terms" | "status" | "total_amount">>
+  id: string, patch: Partial<Pick<Quotation, "valid_until" | "terms" | "status" | "total_amount" | "price_valid_until" | "escalation_clause">>
 ): Promise<void> {
   const { error } = await supabase.from("quotations").update(patch).eq("id", id);
   if (error) throw error;
@@ -392,6 +501,35 @@ export async function updateStage(
 ): Promise<void> {
   const { error } = await supabase.from("project_stages").update(patch).eq("id", id);
   if (error) throw error;
+}
+
+// ---------------- Estimate vs actual (v1.2 #7) ----------------
+
+export async function fetchActuals(projectId: string): Promise<import("@/types/facade").Actual[]> {
+  const { data, error } = await supabase.from("actuals").select("*")
+    .eq("project_id", projectId).order("recorded_at", { ascending: false });
+  if (error) throw error;
+  return (data as import("@/types/facade").Actual[]) ?? [];
+}
+
+export async function createActual(a: {
+  project_id: string; estimate_id: string | null;
+  total_alu_kg_actual: number | null; wastage_pct_actual: number | null;
+  labour_cost_actual: number | null; freight_cost_actual: number | null;
+  material_cost_actual: number | null; notes: string | null; recorded_by: string | null;
+}): Promise<void> {
+  const { error } = await supabase.from("actuals").insert(a);
+  if (error) throw error;
+}
+
+/** Rolling averages across recent actuals — used for the "suggested defaults" panel. */
+export async function fetchActualAverages(): Promise<{ wastage_pct: number | null; count: number }> {
+  const { data, error } = await supabase.from("actuals")
+    .select("wastage_pct_actual").not("wastage_pct_actual", "is", null).limit(200);
+  if (error || !data?.length) return { wastage_pct: null, count: 0 };
+  const vals = (data as any[]).map((r) => Number(r.wastage_pct_actual)).filter((n) => !isNaN(n));
+  if (!vals.length) return { wastage_pct: null, count: 0 };
+  return { wastage_pct: vals.reduce((s, v) => s + v, 0) / vals.length, count: vals.length };
 }
 
 // ---------------- Employees (hub, RLS-limited) ----------------

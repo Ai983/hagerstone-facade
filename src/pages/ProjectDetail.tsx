@@ -15,7 +15,8 @@ import {
   saveEstimateLines, updateProjectStatus, computeSystemCurrentRate,
   fetchQuotations, createQuotationFromEstimate,
   fetchProjectStages, updateStage, fetchEmployees, nextRef,
-  buildProcurementBom, createProcurementExport, createPaymentExport, type EstimateLineDraft,
+  buildProcurementBom, createProcurementExport, createPaymentExport,
+  fetchMarkupTiers, updateEstimateMeta, fetchEstimateRevisions, type EstimateLineDraft,
 } from "@/lib/facadeApi";
 import { logAudit } from "@/lib/audit";
 import { formatINR } from "@/lib/rateEngine";
@@ -23,6 +24,7 @@ import { agingHours, agingLevel, AGING_CLASS, AGING_LABEL, fmtHours } from "@/li
 import {
   buildCpsProcurementPayload, buildFinancePaymentPayload, downloadJson, downloadCsv,
 } from "@/lib/exporters";
+import { ActualsPanel } from "@/components/ActualsPanel";
 import { runElevationTakeoff, fileToBase64, CONFIDENCE_THRESHOLD } from "@/lib/elevationTakeoff";
 import { Download, Sparkles } from "lucide-react";
 
@@ -49,6 +51,8 @@ export default function ProjectDetail() {
   const quotesQ = useQuery({ queryKey: ["quotations", id], queryFn: () => fetchQuotations(id), enabled: !!id });
   const stagesQ = useQuery({ queryKey: ["stages", id], queryFn: () => fetchProjectStages(id), enabled: !!id });
   const empQ = useQuery({ queryKey: ["employees"], queryFn: fetchEmployees });
+  const tiersQ = useQuery({ queryKey: ["markupTiers"], queryFn: fetchMarkupTiers });
+  const revQ = useQuery({ queryKey: ["estimateRevisions", selEst], queryFn: () => fetchEstimateRevisions(selEst!), enabled: !!selEst });
 
   const [lines, setLines] = useState<EstimateLineDraft[]>([]);
   const [busy, setBusy] = useState(false);
@@ -65,6 +69,51 @@ export default function ProjectDetail() {
 
   const selectedEstimate = estQ.data?.find((e) => e.id === selEst) ?? null;
   const total = useMemo(() => lines.reduce((s, l) => s + (Number(l.area_sqm) || 0) * (Number(l.rate_per_sqm) || 0), 0), [lines]);
+  const selectedTier = tiersQ.data?.find((t) => t.id === selectedEstimate?.markup_tier_id) ?? null;
+  const contingencyPct = Number(selectedEstimate?.contingency_pct) || 0;
+  const contingency = total * (contingencyPct / 100);
+  const grandTotal = total + contingency;
+
+  const setTier = async (tierId: string) => {
+    if (!selEst) return;
+    const tier = tiersQ.data?.find((t) => t.id === tierId) ?? null;
+    try {
+      await updateEstimateMeta(selEst, { markup_tier_id: tierId || null, contingency_pct: tier?.contingency_pct ?? 0 });
+      await logAudit("estimate", selEst, "set_markup_tier", user?.id ?? null, { tier: tier?.name, markup_pct: tier?.markup_pct });
+      qc.invalidateQueries({ queryKey: ["estimates", id] });
+      toast.success(tier ? `Markup tier: ${tier.name} (${tier.markup_pct}%)` : "Markup tier cleared");
+    } catch (e: any) { toast.error(e.message); }
+  };
+
+  const repriceWithTier = async () => {
+    if (!selEst || !selectedTier) return;
+    setBusy(true);
+    try {
+      const repriced = await Promise.all(lines.map(async (l) => {
+        if (!l.system_id) return l;
+        try {
+          const r = await computeSystemCurrentRate(l.system_id, { ohOverride: selectedTier.markup_pct });
+          return r ? { ...l, rate_per_sqm: Number(r.rate_per_sqm.toFixed(4)) } : l;
+        } catch { return l; }
+      }));
+      setLines(repriced);
+      await saveEstimateLines(selEst,
+        repriced.map((l) => ({ system_id: l.system_id, elevation_ref: l.elevation_ref || null, area_sqm: Number(l.area_sqm) || 0, rate_per_sqm: Number(l.rate_per_sqm) || 0, notes: l.notes || null, area_source: l.area_source, ai_confidence: l.ai_confidence, ai_confidence_reason: l.ai_confidence_reason })),
+        user?.id ?? null, `Re-priced with tier ${selectedTier.name} (${selectedTier.markup_pct}%)`);
+      await logAudit("estimate", selEst, "reprice_tier", user?.id ?? null, { tier: selectedTier.name });
+      toast.success(`Re-priced with ${selectedTier.name} markup`);
+      qc.invalidateQueries({ queryKey: ["estimateLines", selEst] });
+      qc.invalidateQueries({ queryKey: ["estimates", id] });
+    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
+  };
+
+  const setScenario = async (label: string) => {
+    if (!selEst) return;
+    try {
+      await updateEstimateMeta(selEst, { scenario_label: label || null });
+      qc.invalidateQueries({ queryKey: ["estimates", id] });
+    } catch (e: any) { toast.error(e.message); }
+  };
 
   const sysById = useMemo(() => Object.fromEntries((sysQ.data ?? []).map((s) => [s.id, s])), [sysQ.data]);
 
@@ -100,7 +149,8 @@ export default function ProjectDetail() {
       const t = await saveEstimateLines(selEst, lines.map((l) => ({
         system_id: l.system_id, elevation_ref: l.elevation_ref || null,
         area_sqm: Number(l.area_sqm) || 0, rate_per_sqm: Number(l.rate_per_sqm) || 0, notes: l.notes || null,
-      })));
+        area_source: l.area_source, ai_confidence: l.ai_confidence, ai_confidence_reason: l.ai_confidence_reason,
+      })), user?.id ?? null, "Lines saved");
       await logAudit("estimate", selEst, "update_lines", user?.id ?? null, { lines: lines.length, total: t });
       toast.success(`Saved · total ${formatINR(t)}`);
       await qc.invalidateQueries({ queryKey: ["estimateLines", selEst] });
@@ -262,7 +312,7 @@ export default function ProjectDetail() {
                 {estQ.data.map((e) => (
                   <button key={e.id} onClick={() => setSelEst(e.id)}
                     className={`px-3 py-1.5 rounded-md border text-xs ${selEst === e.id ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent"}`}>
-                    <span className="font-mono">{e.code}</span> · v{e.version} · {formatINR(e.total_amount)}
+                    <span className="font-mono">{e.code}</span> · v{e.version}{e.scenario_label ? ` · ${e.scenario_label}` : ""} · {formatINR(e.total_amount)}
                   </button>
                 ))}
               </div>
@@ -293,6 +343,24 @@ export default function ProjectDetail() {
               )}
             </CardHeader>
             <CardContent className="space-y-2">
+              {/* v1.3 markup tier + scenario */}
+              {!ro && (
+                <div className="flex flex-wrap items-end gap-3 pb-2 border-b mb-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase text-muted-foreground block">Markup tier</label>
+                    <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" value={selectedEstimate?.markup_tier_id ?? ""} onChange={(e) => setTier(e.target.value)}>
+                      <option value="">System default ({/* per-system OH */}OH&amp;P)</option>
+                      {(tiersQ.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.name} · {t.markup_pct}%{t.contingency_pct ? ` +${t.contingency_pct}% cont.` : ""}</option>)}
+                    </select>
+                  </div>
+                  {selectedTier && <Button size="sm" variant="outline" onClick={repriceWithTier} disabled={busy}>Re-price lines with tier</Button>}
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase text-muted-foreground block">Scenario label</label>
+                    <Input className="h-8 w-40" defaultValue={selectedEstimate?.scenario_label ?? ""} placeholder="e.g. DGU vs single"
+                      onBlur={(e) => { if (e.target.value !== (selectedEstimate?.scenario_label ?? "")) setScenario(e.target.value); }} />
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-[1.4fr_90px_80px_110px_120px_28px] gap-2 text-[10px] uppercase text-muted-foreground px-1">
                 <span>System</span><span>Elevation</span><span>Area (sqm)</span><span>Rate/sqm</span><span>Amount</span><span /></div>
               {lines.map((l, i) => {
@@ -327,10 +395,28 @@ export default function ProjectDetail() {
               })}
               {lines.length === 0 && <p className="text-xs text-muted-foreground px-1">No lines. Add a system to estimate.</p>}
               <Separator className="my-2" />
-              <div className="flex justify-end items-center gap-4">
-                <span className="text-sm text-muted-foreground">Estimate total</span>
-                <span className="text-xl font-bold text-primary tabular-nums">{formatINR(total)}</span>
+              <div className="space-y-1 ml-auto w-full max-w-xs text-sm">
+                <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="tabular-nums">{formatINR(total)}</span></div>
+                {contingencyPct > 0 && (
+                  <div className="flex justify-between"><span className="text-muted-foreground">Contingency ({contingencyPct}%)</span><span className="tabular-nums">{formatINR(contingency)}</span></div>
+                )}
+                <div className="flex justify-between font-bold text-primary text-lg pt-1 border-t"><span>Estimate total</span><span className="tabular-nums">{formatINR(grandTotal)}</span></div>
               </div>
+
+              {/* v1.3 revision history */}
+              {revQ.data && revQ.data.length > 0 && (
+                <div className="border-t pt-2 mt-2">
+                  <p className="text-[10px] uppercase text-muted-foreground mb-1">Revision history ({revQ.data.length})</p>
+                  <div className="space-y-0.5 max-h-32 overflow-auto">
+                    {revQ.data.map((r) => (
+                      <div key={r.id} className="text-[11px] text-muted-foreground flex justify-between">
+                        <span>{new Date(r.changed_at).toLocaleString("en-IN")} · {r.change_note ?? "saved"}</span>
+                        <span className="tabular-nums">{formatINR((r.snapshot as any)?.total ?? 0)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -405,6 +491,9 @@ export default function ProjectDetail() {
             </CardContent>
           </Card>
         )}
+
+        {/* Estimate vs actual (v1.2 feedback loop) */}
+        <ActualsPanel projectId={id} estimate={selectedEstimate} />
 
         {/* Exports (F5 — dormant: downloads only, no cps/finance writes) */}
         {canCreate && (
