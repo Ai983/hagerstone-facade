@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.local
+.env.*
+.DS_Store
+*.log
+.vercel
+node_modules/.tmp
+*.tsbuildinfo
+
+# Source/costing data — keep out of git (only code is committed)
+*.xlsx
+scripts/parsed.json
