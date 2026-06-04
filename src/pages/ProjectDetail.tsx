@@ -34,6 +34,7 @@ import {
 } from "@/lib/exporters";
 import { ActualsPanel } from "@/components/ActualsPanel";
 import { TenderScopePanel } from "@/components/TenderScopePanel";
+import { ProcurementPanel } from "@/components/ProcurementPanel";
 import { runElevationTakeoff, fileToBase64, CONFIDENCE_THRESHOLD } from "@/lib/elevationTakeoff";
 import { Download, Sparkles } from "lucide-react";
 
@@ -640,6 +641,9 @@ export default function ProjectDetail() {
 
         {/* AI-2 tender scope extraction */}
         {selectedEstimate && <TenderScopePanel projectId={id} onAddLines={(newLines) => { setLines((a) => [...a, ...newLines]); toast.info("Nayi lines dekhein, phir estimate Save karein"); }} />}
+
+        {/* Procurement → CPS (Avisha) */}
+        <ProcurementPanel project={projQ.data} />
 
         {/* Estimate vs actual (v1.2 feedback loop) */}
         <ActualsPanel projectId={id} estimate={selectedEstimate} />
