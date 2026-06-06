@@ -307,6 +307,15 @@ export interface Quotation {
   // v1.1
   price_valid_until: string | null;
   escalation_clause: string | null;
+  // Brawn-Globus letter fields
+  greeting_name: string | null;
+  subject: string | null;
+  body_text: string | null;
+  price_per_sqft: number | null;
+  payment_terms_a: string | null;
+  payment_terms_b: string | null;
+  payment_terms_c: string | null;
+  payment_terms_d: string | null;
 }
 
 export interface QuotationLine {
@@ -347,6 +356,8 @@ export interface ProcurementRequest {
   export_payload: unknown | null;
   exported_at: string | null;
   created_at: string;
+  cps_pr_id: string | null;
+  cps_pr_number: string | null;
 }
 
 export interface Payment {
@@ -361,6 +372,13 @@ export interface Payment {
   export_payload: unknown | null;
   exported_at: string | null;
   created_at: string;
+  // Step 8 finance tracking
+  direction: string; // receivable|payable
+  mrn_id: string | null;
+  due_date: string | null;
+  paid_amount: number;
+  vendor_gstin: string | null;
+  invoice_ref: string | null;
 }
 
 export interface BomLine {
@@ -383,6 +401,7 @@ export interface AiConfigRow {
 export interface TenderScopeItem {
   id: string;
   project_id: string | null;
+  tender_id: string | null;
   document_id: string | null;
   description: string | null;
   system_guess: string | null;
@@ -416,6 +435,150 @@ export interface CompatibilityRule {
   severity: string;
   message: string | null;
   is_active: boolean;
+}
+
+// ---------------- Step 1: Tenders ----------------
+
+export type TenderStatus = "received" | "scoping" | "qualified" | "converted" | "declined";
+
+export interface Tender {
+  id: string;
+  code: string;
+  client_name: string;
+  tender_name: string;
+  location: string | null;
+  site_address: string | null;
+  document_ref: string | null;
+  due_date: string | null;
+  status: TenderStatus | string;
+  converted_project_id: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---------------- Step 4: Budget Sheet ----------------
+
+export interface BudgetTemplateHead {
+  id: string;
+  head_name: string;
+  sort_order: number;
+  calc_type: string; // manual|pct_of|from_estimate|staffing
+  pct_value: number | null;
+  pct_basis: string | null;
+  default_payment_delay_days: number;
+  is_active: boolean;
+}
+
+export interface Budget {
+  id: string;
+  code: string;
+  project_id: string;
+  estimate_id: string | null;
+  name: string | null;
+  version: number;
+  status: string; // draft|approved
+  reference_date: string | null;
+  start_date: string | null;
+  on_site_date: string | null;
+  completion_date: string | null;
+  markup_pct: number;
+  creditor_interest_pct: number;
+  debtor_interest_pct: number;
+  advance_pct: number;
+  retention_pct: number;
+  total_costs: number;
+  markup_amount: number;
+  contract_value: number;
+  cashflow_snapshot: unknown | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BudgetHead {
+  id: string;
+  budget_id: string;
+  head_name: string;
+  sort_order: number;
+  calc_type: string;
+  value: number;
+  pct_value: number | null;
+  pct_basis: string | null;
+  payment_delay_days: number;
+  deliver_from_month: number | null;
+  deliver_from_year: number | null;
+  deliver_to_month: number | null;
+  deliver_to_year: number | null;
+  notes: string | null;
+}
+
+export interface BudgetPmLine {
+  id: string;
+  budget_id: string;
+  description: string | null;
+  uom: string | null;
+  qty: number;
+  salary: number;
+  duration_months: number;
+  amount: number; // generated
+  sort_order: number;
+}
+
+export interface BudgetMaterialLine {
+  id: string;
+  budget_id: string;
+  description: string | null;
+  qty: number;
+  uom: string | null;
+  rate: number;
+  amount: number; // generated
+  source: string; // manual|estimate
+  sort_order: number;
+}
+
+// ---------------- Step 7: MRN ----------------
+
+export interface MaterialReceivingNote {
+  id: string;
+  code: string;
+  project_id: string;
+  procurement_request_id: string | null;
+  vendor_name: string | null;
+  vendor_gstin: string | null;
+  invoice_ref: string | null;
+  received_date: string | null;
+  status: string; // received|partial|verified|rejected
+  notes: string | null;
+  total_value: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MrnLineItem {
+  id: string;
+  mrn_id: string;
+  procurement_line_id: string | null;
+  material_id: string | null;
+  description: string | null;
+  ordered_qty: number;
+  received_qty: number;
+  unit: string | null;
+  rate: number;
+  amount: number; // generated
+  sort_order: number;
+}
+
+export interface ProcurementLine {
+  id: string;
+  request_id: string;
+  material_id: string | null;
+  description: string | null;
+  qty: number;
+  unit: string | null;
+  sort_order: number;
 }
 
 export type { RateBreakdown };

@@ -1,22 +1,19 @@
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 
-// Company config — same entity as cps PO header (Hagerstone International Pvt. Ltd)
+// Company config — Hagerstone International Pvt. Ltd (Brawn-Globus letter format)
 export const company = {
   name: "Hagerstone International Pvt. Ltd",
-  gst: "GST NO: 09AAECH3768B1ZM",
-  addr: "D-107, 91 Springboard Hub, Red FM Road, Sector-2, Noida, (U.P)",
-  tel: "Tel: +91 9811596660",
-  email: "Email: projects@hagerstone.com",
+  tagline: "Interior Design & Build",
+  gst: "09AAECH3768B1ZM",
+  email: "world@hagerstone.com",
+  web: "www.hagerstone.com",
+  footerAddr: "91 Springboard D-107, Noida Sector-2, Uttar Pradesh - 201301",
 };
 
-const INR = (n: number | null | undefined): string =>
-  n == null || isNaN(n) ? "—" : "Rs. " + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
 const fmtDate = (d: string | null | undefined): string => {
-  if (!d) return "—";
+  if (!d) return new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
   const dt = new Date(d);
-  return isNaN(dt.getTime()) ? d : dt.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  return isNaN(dt.getTime()) ? d : dt.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
 };
 
 export interface QuotationPdfData {
@@ -29,103 +26,137 @@ export interface QuotationPdfData {
   location?: string | null;
   siteAddress?: string | null;
   terms?: string | null;
-  priceValidUntil?: string | null;   // v1.1
-  escalationClause?: string | null;  // v1.1
+  priceValidUntil?: string | null;
+  escalationClause?: string | null;
   lines: Array<{ description: string; area_sqm: number | null; rate_per_sqm: number | null; amount: number | null }>;
   total: number;
+  // Brawn-Globus letter fields
+  greetingName?: string | null;
+  subject?: string | null;
+  bodyText?: string | null;
+  pricePerSqft?: number | null;
+  paymentTermsA?: string | null;
+  paymentTermsB?: string | null;
+  paymentTermsC?: string | null;
+  paymentTermsD?: string | null;
 }
 
+export const DEFAULT_LETTER = {
+  subject: "Providing and fixing facade work as per the architect's specifications.",
+  body: "Reference being made to our discussion and BOQ/drawings shared by you, we are pleased to offer our best rate as below:",
+  termA: "Desired Payment Terms: 30% mobilisation advance, 60% against supply, 5% against installation & 5% upon handing over.",
+  termB: "Electricity by Client & space for safe storage & office to be provided by client free of cost. Scaffolding will be in your scope.",
+  termC: "Offer Validity: 30 Days.",
+  termD: "Completion Period - As per agreed terms.",
+};
+
+/**
+ * Render the client quotation as a single-page business letter matching the
+ * company's Brawn-Globus format (To / Subject / Dear / body / one Rs./sqft price /
+ * Terms a-d / signature / footer).
+ */
 export function generateQuotationPdf(d: QuotationPdfData): void {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
-  const M = 40;
-  let y = 46;
+  const H = doc.internal.pageSize.getHeight();
+  const M = 56;
+  const maxW = W - 2 * M;
+  let y = 56;
 
-  // ── Company header
-  doc.setFont("helvetica", "bold").setFontSize(16).setTextColor(20);
+  // ── Letterhead
+  doc.setFont("helvetica", "bolditalic").setFontSize(16).setTextColor(20);
   doc.text(company.name, M, y);
-  y += 16;
-  doc.setFont("helvetica", "normal").setFontSize(8.5).setTextColor(90);
-  doc.text(company.addr, M, y); y += 11;
-  doc.text(`${company.gst}   ${company.tel}   ${company.email}`, M, y); y += 8;
+  // tan banner on the right
+  doc.setFillColor(176, 156, 110);
+  doc.rect(W - M - 200, y - 14, 200, 20, "F");
+  doc.setFont("helvetica", "bolditalic").setFontSize(11).setTextColor(255);
+  doc.text(company.tagline, W - M - 100, y, { align: "center" });
+  y += 26;
+  doc.setDrawColor(210).line(M, y, W - M, y);
+  y += 26;
 
-  doc.setDrawColor(200).line(M, y, W - M, y); y += 22;
-
-  // ── Title
-  doc.setFont("helvetica", "bold").setFontSize(13).setTextColor(20);
-  doc.text("QUOTATION", M, y);
-  doc.setFontSize(10).setTextColor(80);
+  // ── Date + ref code
+  doc.setFont("helvetica", "bold").setFontSize(10).setTextColor(30);
+  doc.text(`Dated: ${fmtDate(d.date)}`, M, y);
+  doc.setFont("helvetica", "normal").setFontSize(9).setTextColor(110);
   doc.text(d.code, W - M, y, { align: "right" });
-  y += 18;
+  y += 26;
 
-  // ── Meta (client + dates)
-  doc.setFont("helvetica", "normal").setFontSize(9).setTextColor(60);
-  const leftLines = [
-    `Client: ${d.clientName}`,
-    `Project: ${d.projectName}`,
-    d.location ? `Location: ${d.location}` : null,
-    d.siteAddress ? `Site: ${d.siteAddress}` : null,
-  ].filter(Boolean) as string[];
-  const rightLines = [
-    `Date: ${fmtDate(d.date)}`,
-    `Quote valid until: ${fmtDate(d.validUntil)}`,
-    d.priceValidUntil ? `Price valid until: ${fmtDate(d.priceValidUntil)}` : null,
-    d.status ? `Status: ${d.status.toUpperCase()}` : null,
-  ].filter(Boolean) as string[];
-  const startY = y;
-  leftLines.forEach((t, i) => doc.text(t, M, startY + i * 13));
-  rightLines.forEach((t, i) => doc.text(t, W - M, startY + i * 13, { align: "right" }));
-  y = startY + Math.max(leftLines.length, rightLines.length) * 13 + 10;
-
-  // ── Lines table
-  autoTable(doc, {
-    startY: y,
-    head: [["#", "Description", "Area (sqm)", "Rate / sqm", "Amount"]],
-    body: d.lines.map((l, i) => [
-      String(i + 1),
-      l.description,
-      l.area_sqm != null ? l.area_sqm.toLocaleString("en-IN") : "—",
-      INR(l.rate_per_sqm),
-      INR(l.amount),
-    ]),
-    foot: [["", "", "", "Total", INR(d.total)]],
-    theme: "grid",
-    headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: "bold", fontSize: 9 },
-    footStyles: { fillColor: [240, 244, 255], textColor: 20, fontStyle: "bold", fontSize: 10 },
-    bodyStyles: { fontSize: 9, textColor: 40 },
-    columnStyles: {
-      0: { cellWidth: 28, halign: "center" },
-      2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" },
-    },
-    margin: { left: M, right: M },
-  });
-
-  // ── Escalation clause (v1.1) + Terms
-  // @ts-expect-error lastAutoTable is added by the plugin at runtime
-  let ty = (doc.lastAutoTable?.finalY ?? y) + 24;
-  if (d.escalationClause) {
-    doc.setFont("helvetica", "bold").setFontSize(9.5).setTextColor(20);
-    doc.text("Price Escalation", M, ty); ty += 14;
-    doc.setFont("helvetica", "normal").setFontSize(8.5).setTextColor(70);
-    const wrapped = doc.splitTextToSize(d.escalationClause, W - 2 * M);
-    doc.text(wrapped, M, ty);
-    ty += wrapped.length * 11 + 12;
+  // ── To / address
+  doc.setFont("helvetica", "bold").setFontSize(10).setTextColor(30);
+  doc.text("To", M, y); y += 14;
+  doc.text(d.clientName, M, y); y += 14;
+  doc.setFont("helvetica", "normal").setTextColor(50);
+  const addr = (d.siteAddress || d.location || "").trim();
+  if (addr) {
+    const wrapped = doc.splitTextToSize(addr, maxW * 0.6);
+    doc.text(wrapped, M, y); y += wrapped.length * 13;
   }
-  if (d.terms) {
-    doc.setFont("helvetica", "bold").setFontSize(9.5).setTextColor(20);
-    doc.text("Terms & Conditions", M, ty); ty += 14;
-    doc.setFont("helvetica", "normal").setFontSize(8.5).setTextColor(70);
-    const wrapped = doc.splitTextToSize(d.terms, W - 2 * M);
-    doc.text(wrapped, M, ty);
-    ty += wrapped.length * 11 + 10;
-  }
+  y += 12;
 
-  // ── Footer
-  const fy = doc.internal.pageSize.getHeight() - 40;
-  doc.setDrawColor(220).line(M, fy - 10, W - M, fy - 10);
-  doc.setFont("helvetica", "normal").setFontSize(8).setTextColor(120);
-  doc.text("This is a system-generated quotation from the Hagerstone Facade System.", M, fy);
-  doc.text("For Hagerstone International Pvt. Ltd", W - M, fy, { align: "right" });
+  // ── Subject
+  doc.setFont("helvetica", "bold").setFontSize(10).setTextColor(20);
+  const subject = `Subject: ${d.subject || DEFAULT_LETTER.subject}`;
+  const subjWrapped = doc.splitTextToSize(subject, maxW);
+  doc.text(subjWrapped, M, y); y += subjWrapped.length * 14 + 8;
+
+  // ── Greeting + body
+  doc.setFont("helvetica", "bold").setFontSize(10).setTextColor(30);
+  doc.text(`Dear ${d.greetingName || "Sir/Madam"},`, M, y); y += 18;
+  doc.setFont("helvetica", "normal").setFontSize(10).setTextColor(50);
+  const body = doc.splitTextToSize(d.bodyText || DEFAULT_LETTER.body, maxW);
+  doc.text(body, M, y); y += body.length * 14 + 12;
+
+  // ── Price (single per-sqft line)
+  const price = d.pricePerSqft != null && !isNaN(d.pricePerSqft)
+    ? `Price: Rs. ${Number(d.pricePerSqft).toLocaleString("en-IN")} / sqft + GST Extra`
+    : `Price: Rs. ${Number(d.total).toLocaleString("en-IN")} + GST Extra`;
+  doc.setFont("helvetica", "bold").setFontSize(11).setTextColor(20);
+  doc.text(price, M, y); y += 22;
+
+  // ── Terms & conditions a-d
+  doc.setFont("helvetica", "bold").setFontSize(10).setTextColor(20);
+  doc.text("Terms & Conditions:", M, y); y += 16;
+  doc.setFontSize(9.5);
+  const terms = [
+    ["a.", d.paymentTermsA || DEFAULT_LETTER.termA],
+    ["b.", d.paymentTermsB || DEFAULT_LETTER.termB],
+    ["c.", d.paymentTermsC || DEFAULT_LETTER.termC],
+    ["d.", d.paymentTermsD || DEFAULT_LETTER.termD],
+  ];
+  for (const [tag, text] of terms) {
+    doc.setFont("helvetica", "bolditalic").setTextColor(40);
+    doc.text(tag, M, y);
+    doc.setFont("helvetica", "normal").setTextColor(60);
+    const wrapped = doc.splitTextToSize(text, maxW - 18);
+    doc.text(wrapped, M + 18, y);
+    y += wrapped.length * 12 + 6;
+  }
+  y += 10;
+
+  // ── Sign-off
+  doc.setFont("helvetica", "normal").setFontSize(10).setTextColor(50);
+  doc.text("We earnestly believe our offer is as per your requirement, and look forward to", M, y); y += 13;
+  doc.text("hearing from you soon. Assuring you of our best services always.", M, y); y += 22;
+  doc.setFont("helvetica", "bold").setTextColor(30);
+  doc.text("Warm Regards", M, y); y += 16;
+  doc.text("Hagerstone International Pvt Ltd", M, y);
+
+  // ── Footer (centered: web / GST / email + address bar)
+  const fy = H - 64;
+  doc.setDrawColor(220).line(M, fy - 12, W - M, fy - 12);
+  doc.setFont("helvetica", "bolditalic").setFontSize(8.5).setTextColor(150);
+  doc.text("Website:", W * 0.22, fy, { align: "center" });
+  doc.text("GST:", W * 0.5, fy, { align: "center" });
+  doc.text("Email:", W * 0.78, fy, { align: "center" });
+  doc.setFont("helvetica", "bold").setTextColor(60);
+  doc.text(company.web, W * 0.22, fy + 12, { align: "center" });
+  doc.text(company.gst, W * 0.5, fy + 12, { align: "center" });
+  doc.text(company.email, W * 0.78, fy + 12, { align: "center" });
+  // address bar
+  doc.setFillColor(20, 20, 20).rect(0, H - 30, W, 30, "F");
+  doc.setFont("helvetica", "bold").setFontSize(9).setTextColor(255);
+  doc.text(company.footerAddr, W / 2, H - 11, { align: "center" });
 
   doc.save(`${d.code}.pdf`);
 }

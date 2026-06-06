@@ -3,6 +3,8 @@ import type {
   FacadeSystem, SystemMember, SystemMaterial, Material, Section, RateCard, SystemRate, RateBreakdown,
   Project, Estimate, EstimateLine, Quotation, QuotationLine, ProjectStage, EmployeeLite,
   ProcurementRequest, Payment, BomLine, CalcConfigRow,
+  Tender, Budget, BudgetHead, BudgetPmLine, BudgetMaterialLine, BudgetTemplateHead,
+  MaterialReceivingNote, MrnLineItem, ProcurementLine,
 } from "@/types/facade";
 import { DEFAULT_CALC_CONFIG, type CalcConfig } from "@/lib/guardrails";
 import { computeRate, resolveMember, resolveMaterial, computeAssemblyRate, type CutOptInput } from "@/lib/rateEngine";
@@ -232,7 +234,7 @@ export async function updateCalcConfig(key: string, num_value: number, updated_b
 // ---------------- Reference IDs ----------------
 
 /** Generate the next reference id via facade.next_ref(prefix). e.g. nextRef('PRJ') -> FAC-PRJ-2026-0001 */
-export async function nextRef(prefix: "PRJ" | "EST" | "QT" | "PR" | "PAY"): Promise<string> {
+export async function nextRef(prefix: "PRJ" | "EST" | "QT" | "PR" | "PAY" | "TND" | "BUD" | "MRN"): Promise<string> {
   const { data, error } = await supabase.rpc("next_ref", { p_prefix: prefix });
   if (error) throw error;
   return data as string;
@@ -549,7 +551,8 @@ export async function createQuotationFromEstimate(
 }
 
 export async function updateQuotation(
-  id: string, patch: Partial<Pick<Quotation, "valid_until" | "terms" | "status" | "total_amount" | "price_valid_until" | "escalation_clause">>
+  id: string, patch: Partial<Pick<Quotation, "valid_until" | "terms" | "status" | "total_amount" | "price_valid_until" | "escalation_clause" |
+    "greeting_name" | "subject" | "body_text" | "price_per_sqft" | "payment_terms_a" | "payment_terms_b" | "payment_terms_c" | "payment_terms_d">>
 ): Promise<void> {
   const { error } = await supabase.from("quotations").update(patch).eq("id", id);
   if (error) throw error;
@@ -827,4 +830,313 @@ export async function createPaymentExport(
   }).select().single();
   if (error) throw error;
   return data as Payment;
+}
+
+// ============================================================================
+// Step 1 — Tenders
+// ============================================================================
+
+export async function fetchTenders(): Promise<Tender[]> {
+  const { data, error } = await supabase.from("tenders").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return data as Tender[];
+}
+
+export async function fetchTender(id: string): Promise<Tender> {
+  const { data, error } = await supabase.from("tenders").select("*").eq("id", id).single();
+  if (error) throw error;
+  return data as Tender;
+}
+
+export async function createTender(t: {
+  client_name: string; tender_name: string; location?: string; site_address?: string;
+  document_ref?: string; due_date?: string | null; created_by: string | null;
+}): Promise<Tender> {
+  const code = await nextRef("TND");
+  const { data, error } = await supabase.from("tenders").insert({
+    code, client_name: t.client_name, tender_name: t.tender_name,
+    location: t.location || null, site_address: t.site_address || null,
+    document_ref: t.document_ref || null, due_date: t.due_date || null, created_by: t.created_by,
+  }).select().single();
+  if (error) throw error;
+  return data as Tender;
+}
+
+export async function updateTender(
+  id: string, patch: Partial<Pick<Tender, "client_name" | "tender_name" | "location" | "site_address" | "document_ref" | "due_date" | "status" | "notes" | "converted_project_id">>
+): Promise<void> {
+  const { error } = await supabase.from("tenders").update(patch).eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * Convert a tender into a project: create the project (carrying client + location),
+ * create its first estimate, fill in the accepted scope lines, and mark the tender
+ * converted. Reuses the existing project/estimate helpers — nothing is re-typed.
+ */
+export async function convertTenderToProject(
+  tender: Tender, acceptedScope: EstimateLineDraft[], createdBy: string | null
+): Promise<{ project: Project; estimate: Estimate }> {
+  const project = await createProject({
+    client_name: tender.client_name, project_name: tender.tender_name,
+    location: tender.location ?? undefined, site_address: tender.site_address ?? undefined, created_by: createdBy,
+  });
+  const estimate = await createEstimate(project.id, createdBy);
+  if (acceptedScope.length) await saveEstimateLines(estimate.id, acceptedScope, createdBy, "From tender " + tender.code);
+  await updateTender(tender.id, { status: "converted", converted_project_id: project.id });
+  await updateProjectStatus(project.id, "estimating");
+  return { project, estimate };
+}
+
+// ============================================================================
+// Step 4 — Budget Sheet
+// ============================================================================
+
+export async function fetchBudgetTemplateHeads(): Promise<BudgetTemplateHead[]> {
+  const { data, error } = await supabase.from("budget_template_heads").select("*").order("sort_order");
+  if (error) return [];
+  return (data as BudgetTemplateHead[]) ?? [];
+}
+
+export async function updateBudgetTemplateHead(
+  id: string, patch: Partial<Pick<BudgetTemplateHead, "calc_type" | "pct_value" | "pct_basis" | "default_payment_delay_days" | "is_active">>
+): Promise<void> {
+  const { error } = await supabase.from("budget_template_heads").update(patch).eq("id", id);
+  if (error) throw error;
+}
+
+export async function fetchBudgets(projectId: string): Promise<Budget[]> {
+  const { data, error } = await supabase.from("budgets").select("*").eq("project_id", projectId).order("version", { ascending: false });
+  if (error) throw error;
+  return data as Budget[];
+}
+
+export async function fetchBudget(id: string): Promise<Budget> {
+  const { data, error } = await supabase.from("budgets").select("*").eq("id", id).single();
+  if (error) throw error;
+  return data as Budget;
+}
+
+export async function fetchBudgetHeads(budgetId: string): Promise<BudgetHead[]> {
+  const { data, error } = await supabase.from("budget_heads").select("*").eq("budget_id", budgetId).order("sort_order");
+  if (error) throw error;
+  return data as BudgetHead[];
+}
+
+export async function fetchBudgetPmLines(budgetId: string): Promise<BudgetPmLine[]> {
+  const { data, error } = await supabase.from("budget_pm_lines").select("*").eq("budget_id", budgetId).order("sort_order");
+  if (error) throw error;
+  return data as BudgetPmLine[];
+}
+
+export async function fetchBudgetMaterialLines(budgetId: string): Promise<BudgetMaterialLine[]> {
+  const { data, error } = await supabase.from("budget_material_lines").select("*").eq("budget_id", budgetId).order("sort_order");
+  if (error) throw error;
+  return data as BudgetMaterialLine[];
+}
+
+/**
+ * Create a budget for a project, seeded from an estimate:
+ * - cost heads are copied from the global template;
+ * - the Material head is seeded from the estimate BOM;
+ * - the Material head's value is set from the BOM cost so it is non-zero on day 1.
+ * Everything stays editable on the budget; the estimate is never mutated.
+ */
+export async function createBudgetFromEstimate(
+  project: Project, estimateId: string | null, createdBy: string | null
+): Promise<Budget> {
+  const code = await nextRef("BUD");
+  const [tmpl, cfg] = await Promise.all([fetchBudgetTemplateHeads(), fetchCalcConfig()]);
+  const existing = await fetchBudgets(project.id);
+  const version = existing.length ? Math.max(...existing.map((b) => b.version)) + 1 : 1;
+
+  const { data: bud, error } = await supabase.from("budgets").insert({
+    code, project_id: project.id, estimate_id: estimateId, name: project.project_name + " budget",
+    version, status: "draft",
+    markup_pct: (cfg as any).budget_markup_pct ?? 20,
+    creditor_interest_pct: (cfg as any).budget_creditor_interest_pct ?? 15,
+    advance_pct: (cfg as any).budget_advance_pct ?? 10,
+    created_by: createdBy,
+  }).select().single();
+  if (error) throw error;
+  const budget = bud as Budget;
+
+  // copy template heads into this budget
+  if (tmpl.length) {
+    const headRows = tmpl.filter((h) => h.is_active).map((h) => ({
+      budget_id: budget.id, head_name: h.head_name, sort_order: h.sort_order,
+      calc_type: h.calc_type, value: 0, pct_value: h.pct_value, pct_basis: h.pct_basis,
+      payment_delay_days: h.default_payment_delay_days,
+    }));
+    const ins = await supabase.from("budget_heads").insert(headRows);
+    if (ins.error) throw ins.error;
+  }
+
+  // seed material build-up from the estimate BOM
+  if (estimateId) {
+    try {
+      const bom = await buildProcurementBom(estimateId);
+      const matById = Object.fromEntries((await fetchMaterials()).map((m) => [m.id, m]));
+      if (bom.length) {
+        const matRows = bom.map((b, i) => ({
+          budget_id: budget.id, description: b.description, qty: Number(b.qty) || 0, uom: b.unit,
+          rate: b.material_id ? Number(matById[b.material_id]?.default_rate) || 0 : 0,
+          source: "estimate", sort_order: i,
+        }));
+        await supabase.from("budget_material_lines").insert(matRows);
+      }
+    } catch (e) { console.warn("budget material seed failed", e); }
+  }
+  return budget;
+}
+
+export async function updateBudget(
+  id: string, patch: Partial<Pick<Budget,
+    "name" | "status" | "reference_date" | "start_date" | "on_site_date" | "completion_date" |
+    "markup_pct" | "creditor_interest_pct" | "debtor_interest_pct" | "advance_pct" | "retention_pct" |
+    "total_costs" | "markup_amount" | "contract_value" | "cashflow_snapshot">>
+): Promise<void> {
+  const { error } = await supabase.from("budgets").update(patch).eq("id", id);
+  if (error) throw error;
+}
+
+export async function replaceBudgetHeads(budgetId: string, rows: Omit<BudgetHead, "id" | "budget_id">[]): Promise<void> {
+  const del = await supabase.from("budget_heads").delete().eq("budget_id", budgetId);
+  if (del.error) throw del.error;
+  if (rows.length) {
+    const ins = await supabase.from("budget_heads").insert(rows.map((r, i) => ({ ...r, budget_id: budgetId, sort_order: r.sort_order ?? i })));
+    if (ins.error) throw ins.error;
+  }
+}
+
+export async function replaceBudgetPmLines(budgetId: string, rows: Array<Pick<BudgetPmLine, "description" | "uom" | "qty" | "salary" | "duration_months">>): Promise<void> {
+  const del = await supabase.from("budget_pm_lines").delete().eq("budget_id", budgetId);
+  if (del.error) throw del.error;
+  if (rows.length) {
+    const ins = await supabase.from("budget_pm_lines").insert(rows.map((r, i) => ({ ...r, budget_id: budgetId, sort_order: i })));
+    if (ins.error) throw ins.error;
+  }
+}
+
+export async function replaceBudgetMaterialLines(budgetId: string, rows: Array<Pick<BudgetMaterialLine, "description" | "qty" | "uom" | "rate" | "source">>): Promise<void> {
+  const del = await supabase.from("budget_material_lines").delete().eq("budget_id", budgetId);
+  if (del.error) throw del.error;
+  if (rows.length) {
+    const ins = await supabase.from("budget_material_lines").insert(rows.map((r, i) => ({ ...r, budget_id: budgetId, sort_order: i })));
+    if (ins.error) throw ins.error;
+  }
+}
+
+// ============================================================================
+// Step 7 — MRN (Material Receiving Note)
+// ============================================================================
+
+export async function fetchProcurementRequests(projectId: string): Promise<ProcurementRequest[]> {
+  const { data, error } = await supabase.from("procurement_requests").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
+  if (error) return [];
+  return (data as ProcurementRequest[]) ?? [];
+}
+
+export async function fetchProcurementLines(requestId: string): Promise<ProcurementLine[]> {
+  const { data, error } = await supabase.from("procurement_lines").select("*").eq("request_id", requestId).order("sort_order");
+  if (error) return [];
+  return (data as ProcurementLine[]) ?? [];
+}
+
+export async function fetchMrns(projectId: string): Promise<MaterialReceivingNote[]> {
+  const { data, error } = await supabase.from("material_receiving_notes").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
+  if (error) throw error;
+  return data as MaterialReceivingNote[];
+}
+
+export async function fetchMrnLines(mrnId: string): Promise<MrnLineItem[]> {
+  const { data, error } = await supabase.from("mrn_line_items").select("*").eq("mrn_id", mrnId).order("sort_order");
+  if (error) throw error;
+  return data as MrnLineItem[];
+}
+
+export async function createMrn(
+  header: { project_id: string; procurement_request_id?: string | null; vendor_name?: string; vendor_gstin?: string; invoice_ref?: string; received_date?: string; notes?: string; created_by: string | null },
+  lines: Array<{ procurement_line_id?: string | null; material_id?: string | null; description: string; ordered_qty: number; received_qty: number; unit: string; rate: number }>
+): Promise<MaterialReceivingNote> {
+  const code = await nextRef("MRN");
+  const total = lines.reduce((s, l) => s + (Number(l.received_qty) || 0) * (Number(l.rate) || 0), 0);
+  const { data: mrn, error } = await supabase.from("material_receiving_notes").insert({
+    code, project_id: header.project_id, procurement_request_id: header.procurement_request_id ?? null,
+    vendor_name: header.vendor_name ?? null, vendor_gstin: header.vendor_gstin ?? null, invoice_ref: header.invoice_ref ?? null,
+    received_date: header.received_date ?? new Date().toISOString().slice(0, 10), notes: header.notes ?? null,
+    total_value: total, created_by: header.created_by,
+  }).select().single();
+  if (error) throw error;
+  const m = mrn as MaterialReceivingNote;
+  if (lines.length) {
+    const rows = lines.map((l, i) => ({
+      mrn_id: m.id, procurement_line_id: l.procurement_line_id ?? null, material_id: l.material_id ?? null,
+      description: l.description, ordered_qty: Number(l.ordered_qty) || 0, received_qty: Number(l.received_qty) || 0,
+      unit: l.unit, rate: Number(l.rate) || 0, sort_order: i,
+    }));
+    const ins = await supabase.from("mrn_line_items").insert(rows);
+    if (ins.error) throw ins.error;
+  }
+  return m;
+}
+
+export async function updateMrnStatus(id: string, status: string): Promise<void> {
+  const { error } = await supabase.from("material_receiving_notes").update({ status }).eq("id", id);
+  if (error) throw error;
+}
+
+// ============================================================================
+// Step 8 — Finance (receivables / payables tracking; export-only)
+// ============================================================================
+
+export async function fetchPayments(projectId: string): Promise<Payment[]> {
+  const { data, error } = await supabase.from("payments").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
+  if (error) throw error;
+  return data as Payment[];
+}
+
+export async function createReceivable(p: {
+  project_id: string; party_name: string; amount: number; due_date?: string | null; invoice_ref?: string | null;
+}): Promise<Payment> {
+  const code = await nextRef("PAY");
+  const { data, error } = await supabase.from("payments").insert({
+    code, project_id: p.project_id, payment_type: "client_invoice", direction: "receivable",
+    party_name: p.party_name, amount: p.amount, status: "pending", paid_amount: 0,
+    due_date: p.due_date ?? null, invoice_ref: p.invoice_ref ?? null,
+  }).select().single();
+  if (error) throw error;
+  return data as Payment;
+}
+
+export async function createPayableFromMrn(mrn: MaterialReceivingNote, createdBy: string | null): Promise<Payment> {
+  const code = await nextRef("PAY");
+  const { data, error } = await supabase.from("payments").insert({
+    code, project_id: mrn.project_id, payment_type: "vendor_payment", direction: "payable",
+    party_name: mrn.vendor_name, amount: mrn.total_value, status: "pending", paid_amount: 0,
+    mrn_id: mrn.id, vendor_gstin: mrn.vendor_gstin, invoice_ref: mrn.invoice_ref, created_by: createdBy,
+  }).select().single();
+  if (error) throw error;
+  return data as Payment;
+}
+
+/** Update a payment's paid amount / due date; status is derived from paid vs amount. */
+export async function updatePayment(
+  id: string, patch: { paid_amount?: number; due_date?: string | null; amount?: number }
+): Promise<void> {
+  const updates: any = { ...patch };
+  if (patch.paid_amount != null || patch.amount != null) {
+    // fetch current to derive status
+    const { data } = await supabase.from("payments").select("amount, paid_amount, due_date").eq("id", id).single();
+    const amount = patch.amount ?? (Number((data as any)?.amount) || 0);
+    const paid = patch.paid_amount ?? (Number((data as any)?.paid_amount) || 0);
+    const due = patch.due_date ?? (data as any)?.due_date;
+    let status = "pending";
+    if (paid >= amount && amount > 0) status = "paid";
+    else if (paid > 0) status = "partly_paid";
+    else if (due && new Date(due) < new Date()) status = "overdue";
+    updates.status = status;
+  }
+  const { error } = await supabase.from("payments").update(updates).eq("id", id);
+  if (error) throw error;
 }
