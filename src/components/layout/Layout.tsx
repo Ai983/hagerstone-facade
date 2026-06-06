@@ -1,11 +1,12 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { Building2, Calculator, Database, BadgeCheck, LogOut, LayoutDashboard, FolderKanban, Boxes } from "lucide-react";
+import { Building2, Calculator, Database, BadgeCheck, LogOut, LayoutDashboard, FolderKanban, Boxes, FileInput } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { to: "/dashboard", label: "Home", icon: LayoutDashboard },
+  { to: "/tenders", label: "Tenders", icon: FileInput },
   { to: "/projects", label: "Projects (Kaam)", icon: FolderKanban },
   { to: "/calculator", label: "Rate Nikalo", icon: Calculator },
   { to: "/assemblies", label: "Ready Sets", icon: Boxes },

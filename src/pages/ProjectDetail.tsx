@@ -35,8 +35,11 @@ import {
 import { ActualsPanel } from "@/components/ActualsPanel";
 import { TenderScopePanel } from "@/components/TenderScopePanel";
 import { ProcurementPanel } from "@/components/ProcurementPanel";
+import { MrnPanel } from "@/components/MrnPanel";
+import { FinancePanel } from "@/components/FinancePanel";
+import { ProjectFlowStrip } from "@/components/ProjectFlowStrip";
 import { runElevationTakeoff, fileToBase64, CONFIDENCE_THRESHOLD } from "@/lib/elevationTakeoff";
-import { Download, Sparkles } from "lucide-react";
+import { Download, Sparkles, Wallet } from "lucide-react";
 
 const PROJECT_STATUSES = ["enquiry", "estimating", "quoted", "approved", "in_execution", "completed", "lost"];
 
@@ -372,7 +375,11 @@ export default function ProjectDetail() {
             onChange={async (e) => { await updateProjectStatus(id, e.target.value); await logAudit("project", id, "status", user?.id ?? null, { status: e.target.value }); qc.invalidateQueries({ queryKey: ["project", id] }); }}>
             {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
+          <Button variant="outline" size="sm" onClick={() => navigate(`/projects/${id}/budget`)}><Wallet className="h-4 w-4 mr-2" />Budget Sheet</Button>
         </div>
+
+        {/* Guided Step 1 → 8 flow */}
+        <ProjectFlowStrip project={p} />
 
         {/* Estimates / versions */}
         <Card>
@@ -642,8 +649,14 @@ export default function ProjectDetail() {
         {/* AI-2 tender scope extraction */}
         {selectedEstimate && <TenderScopePanel projectId={id} onAddLines={(newLines) => { setLines((a) => [...a, ...newLines]); toast.info("Nayi lines dekhein, phir estimate Save karein"); }} />}
 
-        {/* Procurement → CPS (Avisha) */}
+        {/* Step 6 — Procurement → CPS (Avisha) */}
         <ProcurementPanel project={projQ.data} />
+
+        {/* Step 7 — Material Receiving Note */}
+        <MrnPanel project={projQ.data} />
+
+        {/* Step 8 — Finance (receivables / payables) */}
+        <FinancePanel project={projQ.data} />
 
         {/* Estimate vs actual (v1.2 feedback loop) */}
         <ActualsPanel projectId={id} estimate={selectedEstimate} />
