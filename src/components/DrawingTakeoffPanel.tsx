@@ -25,16 +25,28 @@ export function DrawingTakeoffPanel({ refId, onAddLines }: { refId: string; onAd
   const cfg = aiQ.data?.takeoff ?? { enabled: true, threshold: CONFIDENCE_THRESHOLD };
   if (!canCreate || !cfg.enabled) return null;
 
-  const onFile = async (file: File) => {
-    if (!/\.pdf$/i.test(file.name)) { toast.error("Drawing ko PDF me export karke upload karein (.dwg abhi nahi)"); return; }
+  const onFiles = async (files: FileList) => {
+    const pdfs = Array.from(files).filter((f) => /\.pdf$/i.test(f.name));
+    const bad = Array.from(files).length - pdfs.length;
+    if (bad > 0) toast.warning(`${bad} file(s) skip kiye — sirf PDF allowed hai`);
+    if (!pdfs.length) return;
     setBusy(true);
     try {
-      const b64 = await fileToBase64(file);
       const sys = (sysQ.data ?? []).map((s) => ({ code: s.code, name: s.name, category: s.category }));
-      const res = await runElevationTakeoff(b64, sys);
-      setLines(res.lines.map((l) => ({ ...l, _accept: l.confidence >= (cfg.threshold ?? CONFIDENCE_THRESHOLD) })));
-      await logAiRun({ feature: "takeoff", input_ref: refId, output: res, confidence: res.overall_confidence, confidence_reason: res.notes ?? "", accepted: false, actor_id: user?.id ?? null });
-      toast.success(`${res.lines.length} elevations padhe (overall ${res.overall_confidence}%)`);
+      const results = await Promise.all(
+        pdfs.map(async (file) => {
+          const b64 = await fileToBase64(file);
+          const res = await runElevationTakeoff(b64, sys);
+          await logAiRun({ feature: "takeoff", input_ref: refId, output: res, confidence: res.overall_confidence, confidence_reason: res.notes ?? "", accepted: false, actor_id: user?.id ?? null });
+          return { file: file.name, res };
+        })
+      );
+      const merged = results.flatMap(({ file, res }) =>
+        res.lines.map((l) => ({ ...l, _source: file, _accept: l.confidence >= (cfg.threshold ?? CONFIDENCE_THRESHOLD) }))
+      );
+      setLines(merged);
+      const total = merged.length;
+      toast.success(`${pdfs.length} PDF${pdfs.length > 1 ? "s" : ""} se ${total} elevations padhe`);
     } catch (e: any) { toast.error(`Drawing padhne me dikkat: ${e.message ?? e}`); } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
   };
 
@@ -65,8 +77,8 @@ export function DrawingTakeoffPanel({ refId, onAddLines }: { refId: string; onAd
       <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Ruler className="h-4 w-4" /> Drawing se area nikalo (AI)</CardTitle></CardHeader>
       <CardContent className="space-y-3">
         <p className="text-[11px] text-muted-foreground">AutoCAD drawing ko PDF me export karke upload karein. AI har elevation ka area + system padhega. Zyada bharosa wali line apne aap bharegi, kam bharosa wali "dekhein" ke saath. Aapke confirm karne par hi estimate me jaayegi.</p>
-        <input ref={fileRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
-        <Button size="sm" onClick={() => fileRef.current?.click()} disabled={busy}>{busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1" />}Drawing PDF upload karein</Button>
+        <input ref={fileRef} type="file" accept="application/pdf" multiple className="hidden" onChange={(e) => { if (e.target.files?.length) onFiles(e.target.files); }} />
+        <Button size="sm" onClick={() => fileRef.current?.click()} disabled={busy}>{busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1" />}Drawing PDFs upload karein</Button>
 
         {lines.length > 0 && (
           <div className="space-y-1.5">
@@ -76,13 +88,13 @@ export function DrawingTakeoffPanel({ refId, onAddLines }: { refId: string; onAd
                 <div key={i} className={`text-xs border rounded-md px-2 py-1.5 flex items-start gap-2 ${low ? "border-amber-500/40 bg-amber-500/5" : "border-border"}`}>
                   <input type="checkbox" className="mt-0.5" checked={!!l._accept} onChange={(e) => setLines((a) => a.map((x, j) => j === i ? { ...x, _accept: e.target.checked } : x))} />
                   <div className="flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Badge variant="secondary" className="font-mono text-[10px]">{l.system_code}</Badge>
                       <span className="font-medium">{l.elevation_ref ?? "—"}</span>
                       <span>{l.area_sqm} sqm</span>
                       {low && <span className="text-amber-600 flex items-center gap-0.5"><AlertTriangle className="h-3 w-3" />dekhein</span>}
                     </div>
-                    <span className="text-muted-foreground">bharosa {l.confidence}%{l.confidence_reason ? ` · ${l.confidence_reason}` : ""}</span>
+                    <span className="text-muted-foreground">bharosa {l.confidence}%{l.confidence_reason ? ` · ${l.confidence_reason}` : ""}{l._source ? ` · ${l._source}` : ""}</span>
                   </div>
                 </div>
               );
