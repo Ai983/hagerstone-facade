@@ -17,6 +17,9 @@ const Verification = lazy(() => import("@/pages/Verification"));
 const Projects = lazy(() => import("@/pages/Projects"));
 const ProjectDetail = lazy(() => import("@/pages/ProjectDetail"));
 const QuotationDetail = lazy(() => import("@/pages/QuotationDetail"));
+const Tenders = lazy(() => import("@/pages/Tenders"));
+const TenderDetail = lazy(() => import("@/pages/TenderDetail"));
+const BudgetSheet = lazy(() => import("@/pages/BudgetSheet"));
 
 const queryClient = new QueryClient();
 
@@ -39,8 +42,11 @@ export default function App() {
                 <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/calculator" element={<ProtectedRoute><RateCalculator /></ProtectedRoute>} />
                 <Route path="/calculator/:id" element={<ProtectedRoute><SystemDetail /></ProtectedRoute>} />
+                <Route path="/tenders" element={<ProtectedRoute><Tenders /></ProtectedRoute>} />
+                <Route path="/tenders/:id" element={<ProtectedRoute><TenderDetail /></ProtectedRoute>} />
                 <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
                 <Route path="/projects/:id" element={<ProtectedRoute><ProjectDetail /></ProtectedRoute>} />
+                <Route path="/projects/:id/budget" element={<ProtectedRoute><BudgetSheet /></ProtectedRoute>} />
                 <Route path="/quotations/:id" element={<ProtectedRoute><QuotationDetail /></ProtectedRoute>} />
                 <Route path="/masters" element={<ProtectedRoute><Masters /></ProtectedRoute>} />
                 <Route path="/assemblies" element={<ProtectedRoute><Assemblies /></ProtectedRoute>} />

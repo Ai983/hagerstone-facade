@@ -15,10 +15,11 @@ import {
   fetchCalcConfigRows, updateCalcConfig, fetchPriceFeedLog, addPriceObservation,
   fetchAiConfigRows, updateAiConfig,
   fetchCompatibilityRules, upsertCompatibilityRule, deleteCompatibilityRule,
+  fetchBudgetTemplateHeads, updateBudgetTemplateHead,
 } from "@/lib/facadeApi";
 import { logAudit } from "@/lib/audit";
 import { PriceParsePanel } from "@/components/PriceParsePanel";
-import type { Material, Section, CalcConfigRow, AiConfigRow } from "@/types/facade";
+import type { Material, Section, CalcConfigRow, AiConfigRow, BudgetTemplateHead } from "@/types/facade";
 
 export default function Masters() {
   const qc = useQueryClient();
@@ -33,6 +34,17 @@ export default function Masters() {
   const feedQ = useQuery({ queryKey: ["priceFeed"], queryFn: fetchPriceFeedLog });
   const aiCfgQ = useQuery({ queryKey: ["aiConfigRows"], queryFn: fetchAiConfigRows });
   const compatQ = useQuery({ queryKey: ["compatRules"], queryFn: fetchCompatibilityRules });
+  const budTmplQ = useQuery({ queryKey: ["budgetTemplateHeads"], queryFn: fetchBudgetTemplateHeads });
+  const [budTmpl, setBudTmpl] = useState<BudgetTemplateHead[]>([]);
+  useEffect(() => { if (budTmplQ.data) setBudTmpl(budTmplQ.data.map((h) => ({ ...h }))); }, [budTmplQ.data]);
+  const saveBudgetHead = async (h: BudgetTemplateHead) => {
+    try {
+      await updateBudgetTemplateHead(h.id, { calc_type: h.calc_type, pct_value: h.pct_value == null ? null : Number(h.pct_value), pct_basis: h.pct_basis, default_payment_delay_days: Number(h.default_payment_delay_days) || 0, is_active: h.is_active });
+      await logAudit("budget_template", h.id, "update", user?.id ?? null, { head: h.head_name });
+      toast.success(`${h.head_name} saved`);
+      qc.invalidateQueries({ queryKey: ["budgetTemplateHeads"] });
+    } catch (e: any) { toast.error(e.message); }
+  };
   const [newRule, setNewRule] = useState({ rule_type: "", section_id: "", material_id: "", message: "" });
 
   const addRule = async () => {
@@ -295,6 +307,34 @@ export default function Masters() {
             {cfg.length === 0 && <p className="text-xs text-muted-foreground">No config rows (run the v1.1 migration).</p>}
           </CardContent>
         </Card>
+
+        {/* Budget template (cost heads + %s + payment delays) */}
+        {!ro && (
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Budget template (cost heads)</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-[11px] text-muted-foreground">Naye budget me ye cost heads default aate hain. % heads (Others/Contingency/Intercompany) yahan se badlein. Markup/interest/advance "Warning ki limits" me budget_* keys se set hote hain.</p>
+              <div className="grid grid-cols-[1.4fr_90px_70px_120px_70px_60px_32px] gap-2 text-[10px] uppercase text-muted-foreground px-1">
+                <span>Head</span><span>Type</span><span>%</span><span>% basis</span><span>Delay d</span><span>On</span><span /></div>
+              {budTmpl.map((h, i) => (
+                <div key={h.id} className="grid grid-cols-[1.4fr_90px_70px_120px_70px_60px_32px] gap-2 items-center">
+                  <span className="text-xs truncate" title={h.head_name}>{h.head_name}</span>
+                  <select className="h-8 rounded-md border border-input bg-background px-1 text-xs" value={h.calc_type} onChange={(e) => setBudTmpl((a) => a.map((x, j) => j === i ? { ...x, calc_type: e.target.value } : x))}>
+                    <option value="manual">manual</option><option value="pct_of">pct_of</option><option value="from_estimate">estimate</option><option value="staffing">staffing</option>
+                  </select>
+                  <Input className="h-8" type="number" step="any" disabled={h.calc_type !== "pct_of"} value={h.pct_value == null ? "" : String(h.pct_value)} onChange={(e) => setBudTmpl((a) => a.map((x, j) => j === i ? { ...x, pct_value: e.target.value as any } : x))} />
+                  <select className="h-8 rounded-md border border-input bg-background px-1 text-xs" disabled={h.calc_type !== "pct_of"} value={h.pct_basis ?? "none"} onChange={(e) => setBudTmpl((a) => a.map((x, j) => j === i ? { ...x, pct_basis: e.target.value } : x))}>
+                    <option value="none">—</option><option value="total_costs">total_costs</option><option value="material_production">material+production</option><option value="sales">sales</option>
+                  </select>
+                  <Input className="h-8" type="number" step="any" value={String(h.default_payment_delay_days ?? 0)} onChange={(e) => setBudTmpl((a) => a.map((x, j) => j === i ? { ...x, default_payment_delay_days: e.target.value as any } : x))} />
+                  <div className="flex items-center h-8"><Switch checked={h.is_active} onCheckedChange={(v) => setBudTmpl((a) => a.map((x, j) => j === i ? { ...x, is_active: v } : x))} /></div>
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => saveBudgetHead(budTmpl[i])}><Save className="h-3.5 w-3.5" /></Button>
+                </div>
+              ))}
+              {budTmpl.length === 0 && <p className="text-xs text-muted-foreground">No template heads (run the facade_016 migration).</p>}
+            </CardContent>
+          </Card>
+        )}
 
         {/* AI settings */}
         {!ro && (

@@ -68,6 +68,15 @@ export default function QuotationDetail() {
   const [terms, setTerms] = useState("");
   const [status, setStatus] = useState("draft");
   const [busy, setBusy] = useState(false);
+  // Brawn-Globus letter fields
+  const [greetingName, setGreetingName] = useState("");
+  const [subject, setSubject] = useState("");
+  const [bodyText, setBodyText] = useState("");
+  const [pricePerSqft, setPricePerSqft] = useState("");
+  const [termA, setTermA] = useState("");
+  const [termB, setTermB] = useState("");
+  const [termC, setTermC] = useState("");
+  const [termD, setTermD] = useState("");
 
   useEffect(() => {
     if (qQ.data) {
@@ -76,8 +85,24 @@ export default function QuotationDetail() {
       setEscalationClause(qQ.data.escalation_clause ?? "");
       setTerms(qQ.data.terms ?? DEFAULT_TERMS);
       setStatus(qQ.data.status);
+      setGreetingName(qQ.data.greeting_name ?? "");
+      setSubject(qQ.data.subject ?? "");
+      setBodyText(qQ.data.body_text ?? "");
+      setPricePerSqft(qQ.data.price_per_sqft != null ? String(qQ.data.price_per_sqft) : "");
+      setTermA(qQ.data.payment_terms_a ?? "");
+      setTermB(qQ.data.payment_terms_b ?? "");
+      setTermC(qQ.data.payment_terms_c ?? "");
+      setTermD(qQ.data.payment_terms_d ?? "");
     }
   }, [qQ.data]);
+
+  // Suggested ₹/sqft = total ÷ (Σ area in sqft). 1 sqm = 10.7639 sqft.
+  const suggestedPerSqft = (() => {
+    const areaSqm = (lQ.data ?? []).reduce((s, l) => s + (Number(l.area_sqm) || 0), 0);
+    const sqft = areaSqm * 10.7639;
+    if (!sqft || !qQ.data?.total_amount) return null;
+    return Math.round((qQ.data.total_amount / sqft) * 100) / 100;
+  })();
 
   const ro = !canCreate;
 
@@ -88,6 +113,10 @@ export default function QuotationDetail() {
       await updateQuotation(id, {
         valid_until: validUntil || null, terms, status: newStatus,
         price_valid_until: priceValidUntil || null, escalation_clause: escalationClause || null,
+        greeting_name: greetingName || null, subject: subject || null, body_text: bodyText || null,
+        price_per_sqft: pricePerSqft === "" ? null : Number(pricePerSqft),
+        payment_terms_a: termA || null, payment_terms_b: termB || null,
+        payment_terms_c: termC || null, payment_terms_d: termD || null,
       });
       if (nextStatus && nextStatus !== qQ.data?.status) {
         await logAudit("quotation", id, `status:${nextStatus}`, user?.id ?? null, { from: qQ.data?.status, to: nextStatus });
@@ -121,6 +150,9 @@ export default function QuotationDetail() {
       priceValidUntil: priceValidUntil || null, escalationClause: escalationClause || null,
       lines: (lQ.data ?? []).map((l) => ({ description: l.description, area_sqm: l.area_sqm, rate_per_sqm: l.rate_per_sqm, amount: l.amount })),
       total: qQ.data.total_amount,
+      greetingName: greetingName || null, subject: subject || null, bodyText: bodyText || null,
+      pricePerSqft: pricePerSqft === "" ? null : Number(pricePerSqft),
+      paymentTermsA: termA || null, paymentTermsB: termB || null, paymentTermsC: termC || null, paymentTermsD: termD || null,
     });
     logAudit("quotation", id, "export_pdf", user?.id ?? null, {});
   };
@@ -190,9 +222,37 @@ export default function QuotationDetail() {
               </CardContent>
             </Card>
 
-            {/* Terms */}
+            {/* Brawn-Globus letter (client PDF) */}
             <Card>
-              <CardHeader className="pb-3"><CardTitle className="text-sm">Terms &amp; conditions (shartein)</CardTitle></CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">Quotation letter (client PDF — Brawn format)</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label className="text-xs">Dear (naam)</Label><Input disabled={ro} value={greetingName} placeholder="Mr. Sumit Gogia" onChange={(e) => setGreetingName(e.target.value)} /></div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Price ₹ / sqft</Label>
+                    <Input type="number" step="any" disabled={ro} value={pricePerSqft} placeholder={suggestedPerSqft ? String(suggestedPerSqft) : "460"} onChange={(e) => setPricePerSqft(e.target.value)} />
+                    {suggestedPerSqft != null && (
+                      <button type="button" disabled={ro} className="text-[10px] text-primary hover:underline disabled:no-underline disabled:text-muted-foreground" onClick={() => setPricePerSqft(String(suggestedPerSqft))}>
+                        Suggest: ₹{suggestedPerSqft}/sqft (total ÷ area)
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-1"><Label className="text-xs">Subject</Label><Input disabled={ro} value={subject} placeholder="Providing and fixing ACP projection…" onChange={(e) => setSubject(e.target.value)} /></div>
+                <div className="space-y-1"><Label className="text-xs">Body</Label><Textarea rows={2} disabled={ro} value={bodyText} placeholder="Reference being made to our discussion and BOQ/drawings shared by you…" onChange={(e) => setBodyText(e.target.value)} /></div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label className="text-xs">Term a (payment)</Label><Textarea rows={2} disabled={ro} value={termA} placeholder="30% advance, 60% supply, 5% installation, 5% handover" onChange={(e) => setTermA(e.target.value)} /></div>
+                  <div className="space-y-1"><Label className="text-xs">Term b (scope)</Label><Textarea rows={2} disabled={ro} value={termB} placeholder="Electricity & storage by client; scaffolding in client scope" onChange={(e) => setTermB(e.target.value)} /></div>
+                  <div className="space-y-1"><Label className="text-xs">Term c (validity)</Label><Input disabled={ro} value={termC} placeholder="Offer Validity: 30 Days." onChange={(e) => setTermC(e.target.value)} /></div>
+                  <div className="space-y-1"><Label className="text-xs">Term d (completion)</Label><Input disabled={ro} value={termD} placeholder="Completion Period - As per agreed terms." onChange={(e) => setTermD(e.target.value)} /></div>
+                </div>
+                <p className="text-[10px] text-muted-foreground">Khaali chhodne par standard Brawn wording aa jaayegi. "PDF nikalein" se letter banega.</p>
+              </CardContent>
+            </Card>
+
+            {/* Terms (internal annexure text) */}
+            <Card>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">Terms &amp; conditions (shartein — internal)</CardTitle></CardHeader>
               <CardContent>
                 <Textarea rows={6} disabled={ro} value={terms} onChange={(e) => setTerms(e.target.value)} />
               </CardContent>
